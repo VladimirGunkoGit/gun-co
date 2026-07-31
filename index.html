@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>gun.co</title>
+<meta name="description" content="gun.co — минималистичный таск-менеджер" />
+
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="gun.co" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<link rel="icon" type="image/svg+xml" href="icons/favicon.svg" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500&family=Unbounded:wght@500;600&display=swap" rel="stylesheet" />
+
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ЭКРАН ВХОДА -->
+<div id="auth" class="auth" hidden>
+  <div class="auth-card">
+    <div class="brand brand--big">
+      <span class="logo" aria-hidden="true"></span>
+      <span class="wordmark">gun.co</span>
+    </div>
+    <p class="auth-tagline">Задачи и заметки. Ничего лишнего.</p>
+    <form id="auth-form" class="auth-form" autocomplete="on">
+      <input id="auth-email" class="field" type="email" placeholder="e-mail" required autocomplete="email" />
+      <input id="auth-pass" class="field" type="password" placeholder="пароль" required autocomplete="current-password" minlength="6" />
+      <button id="auth-signin" class="btn btn--solid" type="submit">Войти</button>
+      <button id="auth-signup" class="btn" type="button">Создать аккаунт</button>
+    </form>
+    <div class="auth-divider"><span>или</span></div>
+    <button id="auth-google" class="btn btn--google" type="button">
+      <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 11v3.2h4.5c-.2 1.2-1.4 3.4-4.5 3.4-2.7 0-4.9-2.2-4.9-5s2.2-5 4.9-5c1.5 0 2.6.7 3.2 1.2l2.2-2.1C16.7 4.5 14.6 3.6 12 3.6 7.4 3.6 3.7 7.3 3.7 12s3.7 8.4 8.3 8.4c4.8 0 8-3.4 8-8.1 0-.6 0-1-.1-1.3H12z"/></svg>
+      Войти через Google
+    </button>
+    <p id="auth-msg" class="auth-msg"></p>
+    <button id="auth-close" class="btn auth-back" type="button" hidden>Назад</button>
+    <p id="auth-mode-hint" class="auth-hint"></p>
+  </div>
+</div>
+
+<!-- ПРИЛОЖЕНИЕ -->
+<div id="app" class="app" hidden>
+  <header class="topbar">
+    <button id="brand-home" class="brand brand-btn" type="button" aria-label="На главную">
+      <span class="logo" aria-hidden="true"></span>
+      <span class="wordmark">gun.co</span>
+    </button>
+    <div class="topbar-actions">
+      <button id="theme-btn" class="icon-btn" title="Тема" aria-label="Сменить тему">◐</button>
+      <button id="account-btn" class="icon-btn" title="Аккаунт" aria-label="Аккаунт">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 19.5c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" data-view="home" role="tab">Главная</button>
+    <button class="tab is-active" data-view="create" role="tab">Задача</button>
+    <button class="tab" data-view="notes" role="tab">Заметка</button>
+  </nav>
+
+  <main class="main">
+
+    <!-- ГЛАВНАЯ -->
+    <section id="view-home" class="view" hidden>
+      <div class="pane pane--tasks">
+        <div class="pane-head">
+          <div class="head-left">
+            <h2 class="h-big">задачи</h2>
+            <button id="add-task" class="add-btn" type="button" aria-label="Новая задача">+</button>
+          </div>
+          <div class="pane-head-tools">
+            <button id="date-filter" class="chip chip--date" type="button">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9h17M8 3v3M16 3v3"/></svg>
+              <span id="date-filter-label">все дни</span>
+            </button>
+            <button id="date-clear" class="chip" type="button" hidden>✕</button>
+            <button id="tags-filter" class="chip" type="button">теги</button>
+            <button id="toggle-done" class="icon-toggle" type="button" aria-pressed="false" title="Показать выполненные">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M8 12.4l2.6 2.6 5-5.2"/></svg>
+            </button>
+          </div>
+        </div>
+        <ul id="task-list" class="task-list scroll"></ul>
+        <p id="tasks-empty" class="empty" hidden>Пока нет задач</p>
+      </div>
+
+      <div class="pane pane--notes">
+        <div class="pane-head">
+          <div class="head-left">
+            <h2 class="h-big">заметки</h2>
+            <button id="add-note" class="add-btn" type="button" aria-label="Новая заметка">+</button>
+          </div>
+        </div>
+        <ul id="note-list" class="note-list scroll"></ul>
+        <p id="notes-empty" class="empty" hidden>Пока нет заметок</p>
+      </div>
+
+      <div class="slider-wrap">
+        <div class="slider-caption">сколько показать задач</div>
+        <div class="slider-bar">
+          <input id="slider-val" class="slider-val" type="text" inputmode="numeric" value="5" aria-label="Количество задач" />
+          <input id="task-count" class="slider" type="range" min="3" max="9" step="1" value="5" aria-label="Сколько задач показывать" />
+        </div>
+      </div>
+    </section>
+
+    <!-- СОЗДАТЬ -->
+    <section id="view-create" class="view">
+      <form id="task-form" class="form form--foot">
+        <div class="form-scroll scroll">
+          <h2 class="h-title">новая задача</h2>
+          <input id="t-title" class="field" type="text" placeholder="название" required />
+          <textarea id="t-desc" class="field field--desc" placeholder="описание"></textarea>
+          <div class="form-row">
+            <label class="form-label">дата</label>
+            <button id="t-date" class="field field--pick" type="button"></button>
+          </div>
+          <div class="form-block">
+            <label class="form-label">тег</label>
+            <div id="t-tags" class="tag-pills"></div>
+          </div>
+        </div>
+        <div class="form-foot">
+          <button class="btn btn--solid" type="submit">Добавить</button>
+          <p id="task-saved" class="saved-msg" hidden>Задача добавлена ✓</p>
+        </div>
+      </form>
+    </section>
+
+    <!-- ЗАМЕТКИ -->
+    <section id="view-notes" class="view" hidden>
+      <form id="note-form" class="form form--foot">
+        <div class="form-scroll form-scroll--notes">
+          <h2 class="h-title">заметка</h2>
+          <input id="n-title" class="field" type="text" placeholder="заголовок" required />
+          <div class="editor-toolbar">
+            <button type="button" class="fmt" data-cmd="bold" title="Жирный"><b>B</b></button>
+            <button type="button" class="fmt" data-cmd="italic" title="Курсив"><i>I</i></button>
+            <button type="button" class="fmt" data-cmd="underline" title="Подчёркнутый"><u>U</u></button>
+            <button type="button" class="fmt" data-cmd="link" title="Ссылка">🔗</button>
+          </div>
+          <div id="n-body" class="field field--editor scroll" contenteditable="true" data-placeholder="текст заметки…"></div>
+        </div>
+        <div class="form-foot">
+          <div class="form-actions">
+            <button class="btn btn--solid" type="submit">Сохранить</button>
+            <button id="n-new" class="btn" type="button" hidden>Новая</button>
+            <button id="n-delete" class="btn btn--danger" type="button" hidden>Удалить</button>
+          </div>
+          <p id="note-saved" class="saved-msg" hidden>Заметка сохранена ✓</p>
+        </div>
+      </form>
+    </section>
+
+  </main>
+
+  <button id="fab" class="fab" type="button" aria-label="Новая задача">+</button>
+</div>
+
+<!-- Просмотр заметки -->
+<div id="note-view" class="overlay" hidden>
+  <div class="overlay-card">
+    <button id="note-view-close" class="icon-btn overlay-close" aria-label="Закрыть">✕</button>
+    <h2 id="note-view-title" class="h-title"></h2>
+    <div id="note-view-body" class="note-body"></div>
+    <button id="note-view-edit" class="btn">Редактировать</button>
+  </div>
+</div>
+
+<!-- Календарь -->
+<div id="cal" class="modal" hidden>
+  <div class="modal-card cal-card">
+    <div class="cal-head">
+      <button id="cal-prev" class="icon-btn" aria-label="Назад">‹</button>
+      <div id="cal-title" class="cal-title"></div>
+      <button id="cal-next" class="icon-btn" aria-label="Вперёд">›</button>
+    </div>
+    <div class="cal-weekdays"><span>пн</span><span>вт</span><span>ср</span><span>чт</span><span>пт</span><span>сб</span><span>вс</span></div>
+    <div id="cal-grid" class="cal-grid"></div>
+    <div id="cal-extra" class="cal-extra" hidden>
+      <label class="cal-time-row">время <input id="cal-time" class="field cal-time" type="time" step="60" /></label>
+      <button id="cal-notify" class="bell-btn" type="button" aria-label="Уведомление">
+        <svg class="bell-ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 8.6a6 6 0 0112 0c0 4.4 1.8 5.7 2.4 6.2.4.3.1.9-.4.9H4c-.5 0-.8-.6-.4-.9.6-.5 2.4-1.8 2.4-6.2z"/>
+          <path d="M10 19a2 2 0 004 0"/>
+          <line class="bell-slash" x1="4.5" y1="4" x2="20" y2="20.5"/>
+        </svg>
+        <span class="bell-txt">уведомление</span>
+      </button>
+    </div>
+    <div class="cal-actions">
+      <button id="cal-all" class="btn" type="button" hidden>Все дни</button>
+      <button id="cal-done" class="btn btn--solid" type="button" hidden>Готово</button>
+      <button id="cal-cancel" class="btn" type="button">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<!-- Фильтр по тегам -->
+<div id="tags-menu" class="modal" hidden>
+  <div class="modal-card tags-modal">
+    <div class="modal-title">теги</div>
+    <div class="search-wrap">
+      <input id="tags-search" class="field field--search" type="text" placeholder=" " aria-label="Поиск тега" />
+      <svg class="search-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+    </div>
+    <div id="tags-cloud" class="tag-cloud scroll"></div>
+    <button id="tags-reset" class="fmenu-reset" type="button">сбросить</button>
+  </div>
+</div>
+
+<!-- Ввод ссылки -->
+<div id="link-modal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-title">Ссылка</div>
+    <input id="link-input" class="field" type="url" placeholder="https://…" />
+    <div class="form-actions">
+      <button id="link-ok" class="btn btn--solid" type="button">Ок</button>
+      <button id="link-cancel" class="btn" type="button">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<!-- Новый тег -->
+<div id="tag-modal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-title">Новый тег</div>
+    <input id="tag-input" class="field" type="text" placeholder="название тега" maxlength="24" />
+    <div class="form-actions">
+      <button id="tag-ok" class="btn btn--solid" type="button">Добавить</button>
+      <button id="tag-cancel" class="btn" type="button">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+</body>
+</html>
