@@ -1,4 +1,4 @@
-/* ================= gun.co — логика ================= */
+/* ================= gunco — логика ================= */
 (function () {
   "use strict";
 
@@ -19,16 +19,20 @@
   const MONTHS_SHORT = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
   const WEEKDAYS = ["ВС", "ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ"];
 
+  function toast(msg) { const el = $("#toast"); el.textContent = msg; el.hidden = false; clearTimeout(el._t); el._t = setTimeout(() => (el.hidden = true), 1400); }
+  function copyText(t) { if (!t) return; try { navigator.clipboard.writeText(t).then(() => toast("скопировано"), () => toast("скопировано")); } catch { toast("скопировано"); } }
+
   /* ---------- Хранилище ---------- */
   const LKEY = "gunco_data_v1";
   const DEFAULT_TAGS = ["жизнь", "работа"];
 
   const Local = {
     read() { try { return JSON.parse(localStorage.getItem(LKEY)) || {}; } catch { return {}; } },
-    write(d) { localStorage.setItem(LKEY, JSON.stringify(d)); },
+    write(d) { try { localStorage.setItem(LKEY, JSON.stringify(d)); } catch (e) { toast("не хватает места (нужен вход/сервер)"); } },
     ensure() {
       const d = this.read();
-      d.tasks = d.tasks || []; d.notes = d.notes || [];
+      d.tasks = d.tasks || [];
+      d.tasks.forEach((t) => { if (!t.id) t.id = uid(); });
       d.tags = d.tags || DEFAULT_TAGS.slice();
       if (!d.tagsV2) { d.tags = DEFAULT_TAGS.slice(); d.tagsV2 = true; }
       d.settings = d.settings || { theme: "dark", count: 5 };
@@ -44,7 +48,7 @@
     },
     async addTask(t) {
       if (sb && this.userId) { const { data } = await sb.from("tasks").insert({ ...t, user_id: this.userId }).select().single(); return data; }
-      const d = Local.ensure(); const row = { id: uid(), is_done: false, ...t }; d.tasks.push(row); Local.write(d); return row;
+      const d = Local.ensure(); const row = { ...t, id: uid(), is_done: false }; d.tasks.push(row); Local.write(d); return row;
     },
     async updateTask(id, fields) {
       if (sb && this.userId) { await sb.from("tasks").update(fields).eq("id", id); return; }
@@ -54,25 +58,6 @@
     async deleteTask(id) {
       if (sb && this.userId) { await sb.from("tasks").delete().eq("id", id); return; }
       const d = Local.ensure(); d.tasks = d.tasks.filter((x) => x.id !== id); Local.write(d);
-    },
-    async notes() {
-      if (sb && this.userId) { const { data } = await sb.from("notes").select("*").eq("user_id", this.userId).order("updated_at", { ascending: false }); return data || []; }
-      return Local.ensure().notes.slice().sort((a, b) => (b.updated_at || b.created_at || "").localeCompare(a.updated_at || a.created_at || ""));
-    },
-    async saveNote(n) {
-      const now = new Date().toISOString();
-      if (sb && this.userId) {
-        if (n.id) { const { data } = await sb.from("notes").update({ title: n.title, body_html: n.body_html, updated_at: now }).eq("id", n.id).select().single(); return data; }
-        const { data } = await sb.from("notes").insert({ title: n.title, body_html: n.body_html, updated_at: now, user_id: this.userId }).select().single(); return data;
-      }
-      const d = Local.ensure();
-      if (n.id) { const e = d.notes.find((x) => x.id === n.id); if (e) { e.title = n.title; e.body_html = n.body_html; e.updated_at = now; } }
-      else { n = { id: uid(), created_at: now, updated_at: now, ...n }; d.notes.push(n); }
-      Local.write(d); return n;
-    },
-    async deleteNote(id) {
-      if (sb && this.userId) { await sb.from("notes").delete().eq("id", id); return; }
-      const d = Local.ensure(); d.notes = d.notes.filter((x) => x.id !== id); Local.write(d);
     },
     async tags() {
       if (sb && this.userId) {
@@ -100,6 +85,41 @@
   function applyTheme(theme) { document.documentElement.setAttribute("data-theme", theme); Store.saveSettings({ theme }); }
   $("#theme-btn").addEventListener("click", () => applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark"));
 
+  /* ---------- Подтверждение ---------- */
+  const TRASH_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5.5h6V7M6.5 7l.9 12.5h9.2L17.5 7"/></svg>`;
+  const BELL_BASE = `<path d="M6 8.6a6 6 0 0112 0c0 4.4 1.8 5.7 2.4 6.2.4.3.1.9-.4.9H4c-.5 0-.8-.6-.4-.9.6-.5 2.4-1.8 2.4-6.2z"/><path d="M10 19a2 2 0 004 0"/>`;
+  const BELL_ON = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px">${BELL_BASE}</svg>`;
+  const BELL_OFF = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;opacity:.6">${BELL_BASE}<line x1="4.5" y1="4" x2="20" y2="20.5"/></svg>`;
+  let confirmResolve = null;
+  function askConfirm(text = "Удалить?") { $("#confirm-text").textContent = text; $("#confirm-modal").hidden = false; return new Promise((res) => (confirmResolve = res)); }
+  function closeConfirm(v) { $("#confirm-modal").hidden = true; if (confirmResolve) { confirmResolve(v); confirmResolve = null; } }
+  $("#confirm-yes").addEventListener("click", () => closeConfirm(true));
+  $("#confirm-no").addEventListener("click", () => closeConfirm(false));
+  $("#confirm-modal").addEventListener("click", (e) => { if (e.target.id === "confirm-modal") closeConfirm(false); });
+
+  /* ---------- Свайп строки: удаление (влево) ---------- */
+  let justSwiped = false;
+  function attachSwipe(el, onDelete) {
+    const fg = el.querySelector(".swipe-row");
+    let startX = 0, startY = 0, dx = 0, dragging = false;
+    el.addEventListener("touchstart", (e) => { const t = e.touches[0]; startX = t.clientX; startY = t.clientY; dx = 0; dragging = true; fg.style.transition = "none"; }, { passive: true });
+    el.addEventListener("touchmove", (e) => {
+      if (!dragging) return;
+      const t = e.touches[0]; const mx = t.clientX - startX, my = t.clientY - startY;
+      if (Math.abs(my) > Math.abs(mx) && Math.abs(my) > 8) { dragging = false; fg.style.transform = ""; return; }
+      dx = Math.min(0, mx); fg.style.transform = `translateX(${dx}px)`;
+    }, { passive: true });
+    el.addEventListener("touchend", async () => {
+      if (!dragging) return; dragging = false;
+      fg.style.transition = "transform .2s";
+      if (dx < -70) {
+        justSwiped = true; setTimeout(() => (justSwiped = false), 400);
+        fg.style.transform = "translateX(-100%)";
+        if (await askConfirm("Удалить?")) await onDelete(); else fg.style.transform = "translateX(0)";
+      } else fg.style.transform = "translateX(0)";
+    });
+  }
+
   /* ---------- Календарь ---------- */
   const cal = { y: 0, m: 0, value: "", mode: "filter", onPick: null, allowAll: false };
   function openCalendar({ value, mode = "filter", time = "", notify = true, allowAll = false, onPick }) {
@@ -125,6 +145,7 @@
       const cls = ["cal-day"]; if (ds === t) cls.push("today"); if (ds === cal.value) cls.push("sel");
       html += `<button type="button" class="${cls.join(" ")}" data-d="${ds}">${d}</button>`;
     }
+    for (let i = offset + days; i < 42; i++) html += `<span class="cal-day empty"></span>`; // всегда 6 недель — окно не «прыгает»
     $("#cal-grid").innerHTML = html;
     $$("#cal-grid .cal-day[data-d]").forEach((b) => b.addEventListener("click", () => {
       const v = b.dataset.d;
@@ -132,8 +153,14 @@
       else { $("#cal").hidden = true; cal.onPick && cal.onPick(v); }
     }));
   }
-  $("#cal-prev").addEventListener("click", () => { cal.m--; if (cal.m < 0) { cal.m = 11; cal.y--; } renderCal(); });
-  $("#cal-next").addEventListener("click", () => { cal.m++; if (cal.m > 11) { cal.m = 0; cal.y++; } renderCal(); });
+  function calPrev() { cal.m--; if (cal.m < 0) { cal.m = 11; cal.y--; } renderCal(); }
+  function calNext() { cal.m++; if (cal.m > 11) { cal.m = 0; cal.y++; } renderCal(); }
+  $("#cal-prev").addEventListener("click", calPrev);
+  $("#cal-next").addEventListener("click", calNext);
+  (function () { const g = $("#cal-grid"); let sx = 0, sy = 0, on = false;
+    g.addEventListener("touchstart", (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true });
+    g.addEventListener("touchend", (e) => { if (!on) return; on = false; const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) (dx < 0 ? calNext() : calPrev()); }, { passive: true });
+  })();
   $("#cal-cancel").addEventListener("click", () => ($("#cal").hidden = true));
   $("#cal-all").addEventListener("click", () => { $("#cal").hidden = true; cal.onPick && cal.onPick(""); });
   $("#cal-notify").addEventListener("click", () => $("#cal-notify").classList.toggle("off"));
@@ -142,61 +169,35 @@
 
   /* ---------- Навигация ---------- */
   let currentView = "tasks";
+  let currentTaskId = null, currentTask = null;
   function showView(name) {
     currentView = name;
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
-    $$(".head-tab").forEach((t) => t.classList.toggle("is-active", t.dataset.view === name));
+    const sub = (name === "taskpage" || name === "task");
+    $("#back-btn").hidden = !sub;
+    $("#page-title").hidden = sub;
+    $("#fab").hidden = (name === "task");
     if (name === "tasks") renderTasks();
-    if (name === "notes") renderNotesList();
   }
-  $$(".head-tab").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
-  // Крупная кнопка «+» у заголовков — создаёт по активному разделу
-  $("#head-add").addEventListener("click", () => { if (currentView === "notes" || currentView === "note") newNote(); else newTask(); });
-
-  /* ---------- Подтверждение удаления ---------- */
-  const TRASH_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5.5h6V7M6.5 7l.9 12.5h9.2L17.5 7"/></svg>`;
-  let confirmResolve = null;
-  function askConfirm(text = "Удалить?") {
-    $("#confirm-text").textContent = text;
-    $("#confirm-modal").hidden = false;
-    return new Promise((res) => (confirmResolve = res));
+  function goBack() {
+    const openModal = $$(".modal").find((m) => !m.hidden);
+    if (openModal) { openModal.hidden = true; return; }
+    if (currentView === "task") { if (editingTaskId && currentTaskId) openTaskPage(currentTaskId); else showView("tasks"); }
+    else if (currentView === "taskpage") showView("tasks");
   }
-  function closeConfirm(val) { $("#confirm-modal").hidden = true; if (confirmResolve) { confirmResolve(val); confirmResolve = null; } }
-  $("#confirm-yes").addEventListener("click", () => closeConfirm(true));
-  $("#confirm-no").addEventListener("click", () => closeConfirm(false));
-  $("#confirm-modal").addEventListener("click", (e) => { if (e.target.id === "confirm-modal") closeConfirm(false); });
+  $("#back-btn").addEventListener("click", goBack);
+  $("#fab").addEventListener("click", () => newTask());
 
-  /* ---------- Свайп-удаление строки ---------- */
-  let justSwiped = false;
-  function attachSwipe(el, onDelete) {
-    const fg = el.querySelector(".swipe-row");
-    let startX = 0, startY = 0, dx = 0, dragging = false;
-    el.addEventListener("touchstart", (e) => { const t = e.touches[0]; startX = t.clientX; startY = t.clientY; dx = 0; dragging = true; fg.style.transition = "none"; }, { passive: true });
-    el.addEventListener("touchmove", (e) => {
-      if (!dragging) return;
-      const t = e.touches[0]; const mx = t.clientX - startX, my = t.clientY - startY;
-      if (Math.abs(my) > Math.abs(mx) && Math.abs(my) > 8) { dragging = false; fg.style.transform = ""; return; }
-      dx = Math.min(0, mx);
-      fg.style.transform = `translateX(${dx}px)`;
-    }, { passive: true });
-    el.addEventListener("touchend", async () => {
-      if (!dragging) return; dragging = false;
-      fg.style.transition = "transform .2s";
-      if (dx < -70) {
-        justSwiped = true; setTimeout(() => (justSwiped = false), 400);
-        fg.style.transform = "translateX(-100%)";
-        if (await askConfirm("Удалить?")) await onDelete(); else fg.style.transform = "translateX(0)";
-      } else fg.style.transform = "translateX(0)";
-    });
-  }
+  /* свайп вправо = назад (без сохранения) */
+  (function () {
+    const main = $(".main"); let sx = 0, sy = 0, on = false;
+    main.addEventListener("touchstart", (e) => { if (e.touches.length !== 1 || e.target.closest(".attach-list") || e.target.closest(".swipe-row")) { on = false; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true });
+    main.addEventListener("touchmove", (e) => { if (!on) return; const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy; if (Math.abs(dy) > Math.abs(dx)) on = false; }, { passive: true });
+    main.addEventListener("touchend", (e) => { if (!on) return; on = false; const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; if (dx > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) goBack(); }, { passive: true });
+  })();
 
-  /* ---------- ЗАДАЧИ: список ---------- */
-  let showDone = false;
-  let dateFilter = "";
-  let filterTags = new Set();
-  let taskCount = 5;
-  let tasksById = {};
-
+  /* ---------- Список задач ---------- */
+  let showDone = false, dateFilter = "", filterTags = new Set(), taskCount = 5, tasksById = {};
   function dayHead(day) {
     if (!day) return "без даты";
     const [y, m, d] = day.split("-").map(Number);
@@ -231,39 +232,27 @@
     if (lastDay !== null) html += "</div></div>";
     $("#task-list").innerHTML = html;
     $$("#task-list .task").forEach((el) => {
-      el.querySelector(".check").addEventListener("click", async (e) => {
-        e.stopPropagation();
-        await Store.toggleTask(el.dataset.id, !el.classList.contains("done"));
-        renderTasks();
-      });
+      el.querySelector(".check").addEventListener("click", async (e) => { e.stopPropagation(); await Store.toggleTask(el.dataset.id, !el.classList.contains("done")); renderTasks(); });
       attachSwipe(el, async () => { await Store.deleteTask(el.dataset.id); renderTasks(); });
     });
   }
   $("#task-list").addEventListener("click", (e) => {
-    if (justSwiped) return;
-    if (e.target.closest(".check")) return;
+    if (justSwiped || e.target.closest(".check")) return;
     const el = e.target.closest(".task");
-    if (el && tasksById[el.dataset.id]) openTaskEdit(tasksById[el.dataset.id]);
+    if (el && tasksById[el.dataset.id]) openTaskPage(el.dataset.id);
   });
 
   /* фильтры */
   $("#toggle-done").addEventListener("click", (e) => { showDone = !showDone; e.currentTarget.setAttribute("aria-pressed", showDone); renderTasks(); });
-  $("#date-filter").addEventListener("click", () => openCalendar({ value: dateFilter, mode: "filter", allowAll: true, onPick: (v) => {
-    dateFilter = v; $("#date-filter-label").textContent = v ? fmtFull(v) : "все дни"; $("#date-filter").classList.toggle("is-set", !!v); $("#date-clear").hidden = !v; renderTasks();
-  } }));
+  $("#date-filter").addEventListener("click", () => openCalendar({ value: dateFilter, mode: "filter", allowAll: true, onPick: (v) => { dateFilter = v; $("#date-filter-label").textContent = v ? fmtFull(v) : "все дни"; $("#date-filter").classList.toggle("is-set", !!v); $("#date-clear").hidden = !v; renderTasks(); } }));
   $("#date-clear").addEventListener("click", () => { dateFilter = ""; $("#date-filter-label").textContent = "все дни"; $("#date-filter").classList.remove("is-set"); $("#date-clear").hidden = true; renderTasks(); });
 
   async function renderTagsCloud() {
     const q = ($("#tags-search").value || "").trim().toLowerCase();
     const tags = await Store.tags();
     const list = q ? tags.filter((t) => t.toLowerCase().includes(q)) : tags;
-    $("#tags-cloud").innerHTML = list.length
-      ? list.map((t) => `<button type="button" class="tag ${filterTags.has(t) ? "is-on" : ""}" data-tag="${esc(t)}">${esc(t)}</button>`).join("")
-      : `<span class="empty">ничего не найдено</span>`;
-    $$("#tags-cloud .tag[data-tag]").forEach((b) => b.addEventListener("click", () => {
-      const t = b.dataset.tag; filterTags.has(t) ? filterTags.delete(t) : filterTags.add(t);
-      $("#tags-filter").classList.toggle("is-on", filterTags.size > 0); renderTagsCloud(); renderTasks();
-    }));
+    $("#tags-cloud").innerHTML = list.length ? list.map((t) => `<button type="button" class="tag ${filterTags.has(t) ? "is-on" : ""}" data-tag="${esc(t)}">${esc(t)}</button>`).join("") : `<span class="empty">ничего не найдено</span>`;
+    $$("#tags-cloud .tag[data-tag]").forEach((b) => b.addEventListener("click", () => { const t = b.dataset.tag; filterTags.has(t) ? filterTags.delete(t) : filterTags.add(t); $("#tags-filter").classList.toggle("is-on", filterTags.size > 0); renderTagsCloud(); renderTasks(); }));
   }
   $("#tags-filter").addEventListener("click", async () => { $("#tags-search").value = ""; $(".search-wrap").classList.remove("has-text"); await renderTagsCloud(); $("#tags-menu").hidden = false; setTimeout(() => $("#tags-search").focus(), 30); });
   $("#tags-search").addEventListener("input", (e) => { $(".search-wrap").classList.toggle("has-text", !!e.target.value); renderTagsCloud(); });
@@ -271,122 +260,116 @@
   $("#tags-menu").addEventListener("click", (e) => { if (e.target.id === "tags-menu") $("#tags-menu").hidden = true; });
 
   /* ползунок */
-  const slider = $("#task-count");
-  const sliderVal = $("#slider-val");
+  const slider = $("#task-count"), sliderVal = $("#slider-val");
   slider.addEventListener("input", (e) => { taskCount = +e.target.value; sliderVal.value = taskCount; renderTasks(); });
   slider.addEventListener("change", () => Store.saveSettings({ count: taskCount }));
   sliderVal.addEventListener("change", () => { let v = parseInt(sliderVal.value, 10); if (!v || v < 1) v = 1; taskCount = v; slider.value = Math.min(v, 9); sliderVal.value = v; Store.saveSettings({ count: v }); renderTasks(); });
   sliderVal.addEventListener("focus", () => sliderVal.select());
 
-  /* ---------- ЗАДАЧА: редактор ---------- */
-  let editingTaskId = null, selectedTag = null;
+  /* ---------- СТРАНИЦА задачи ---------- */
+  async function openTaskPage(id) {
+    const t = (await Store.tasks()).find((x) => x.id === id);
+    if (!t) { showView("tasks"); return; }
+    currentTask = t; currentTaskId = id;
+    $("#tp-title").textContent = t.title || "без названия";
+    $("#tp-date").innerHTML = t.due_date ? (fmtFull(t.due_date) + (t.due_time ? " · " + t.due_time : "") + " " + (t.notify !== false ? BELL_ON : BELL_OFF)) : "без даты";
+    $("#tp-tags").innerHTML = t.tag ? `<span class="tag is-on">${esc(t.tag)}</span>` : `<span class="tp-tag-empty">+ тег</span>`;
+    renderAttachView(t.attachments || []);
+    $("#tp-desc").textContent = t.description || "";
+    showView("taskpage");
+  }
+  function renderAttachView(atts) {
+    $("#tp-attach").innerHTML = (atts || []).map((a, i) => {
+      const inner = a.type && a.type.startsWith("image/") ? `<img src="${a.url}" alt="">` : `<div class="att-file">${esc((a.name || "файл").slice(0, 14))}</div>`;
+      return `<div class="att" data-i="${i}">${inner}</div>`;
+    }).join("");
+    $$("#tp-attach .att").forEach((el) => el.addEventListener("click", () => { const a = atts[+el.dataset.i]; if (a && a.url) window.open(a.url, "_blank"); }));
+  }
+  $("#tp-title").addEventListener("click", () => copyText(currentTask && currentTask.title));
+  $("#tp-desc").addEventListener("click", () => copyText(currentTask && currentTask.description));
+  $("#tp-edit").addEventListener("click", () => { if (currentTask) openTaskEdit(currentTask); });
+  $("#tp-date").addEventListener("click", () => {
+    if (!currentTask) return;
+    openCalendar({ value: currentTask.due_date || tomorrowStr(), mode: "task", time: currentTask.due_time || "", notify: currentTask.notify !== false, onPick: async (v, ex) => { await Store.updateTask(currentTaskId, { due_date: v, due_time: (ex && ex.time) || null, notify: !!(ex && ex.notify) }); openTaskPage(currentTaskId); } });
+  });
+  $("#tp-tags").addEventListener("click", () => openTagPick());
+
+  /* выбор тега для задачи (инлайн со страницы) */
+  async function openTagPick() {
+    const tags = await Store.tags();
+    const cur = currentTask && currentTask.tag;
+    $("#tagpick-pills").innerHTML = tags.map((t) => `<button type="button" class="tag ${t === cur ? "is-on" : ""}" data-tag="${esc(t)}">${esc(t)}</button>`).join("") + `<button type="button" class="tag-add" id="tagpick-add">+</button>`;
+    $$("#tagpick-pills .tag[data-tag]").forEach((b) => b.addEventListener("click", async () => { await Store.updateTask(currentTaskId, { tag: b.dataset.tag }); $("#tagpick-modal").hidden = true; openTaskPage(currentTaskId); }));
+    $("#tagpick-add").addEventListener("click", () => { tagAddContext = "tagpick"; $("#tag-input").value = ""; $("#tag-modal").hidden = false; setTimeout(() => $("#tag-input").focus(), 30); });
+    $("#tagpick-modal").hidden = false;
+  }
+  $("#tagpick-modal").addEventListener("click", (e) => { if (e.target.id === "tagpick-modal") $("#tagpick-modal").hidden = true; });
+
+  /* ---------- РЕДАКТОР задачи ---------- */
+  let editingTaskId = null, selectedTag = null, tagAddContext = "form";
   let taskDate = tomorrowStr(), taskTime = "12:00", taskNotify = true;
+  let currentAttachments = [];
 
   async function fillTags() {
     const tags = await Store.tags();
     if (!selectedTag || !tags.includes(selectedTag)) selectedTag = tags[0] || null;
-    $("#t-tags").innerHTML = tags.map((t) => `<button type="button" class="tag ${t === selectedTag ? "is-on" : ""}" data-tag="${esc(t)}">${esc(t)}</button>`).join("")
-      + `<button type="button" class="tag-add" id="tag-add">+</button>`;
+    $("#t-tags").innerHTML = tags.map((t) => `<button type="button" class="tag ${t === selectedTag ? "is-on" : ""}" data-tag="${esc(t)}">${esc(t)}</button>`).join("") + `<button type="button" class="tag-add" id="tag-add">+</button>`;
     $$("#t-tags .tag[data-tag]").forEach((b) => b.addEventListener("click", () => { selectedTag = b.dataset.tag; fillTags(); }));
-    $("#tag-add").addEventListener("click", () => { $("#tag-input").value = ""; $("#tag-modal").hidden = false; setTimeout(() => $("#tag-input").focus(), 30); });
+    $("#tag-add").addEventListener("click", () => { tagAddContext = "form"; $("#tag-input").value = ""; $("#tag-modal").hidden = false; setTimeout(() => $("#tag-input").focus(), 30); });
   }
-  $("#tag-ok").addEventListener("click", async () => { const name = ($("#tag-input").value || "").trim().toLowerCase(); $("#tag-modal").hidden = true; if (!name) return; await Store.addTag(name); selectedTag = name; await fillTags(); });
+  $("#tag-ok").addEventListener("click", async () => {
+    const name = ($("#tag-input").value || "").trim().toLowerCase();
+    $("#tag-modal").hidden = true; if (!name) return;
+    await Store.addTag(name);
+    if (tagAddContext === "form") { selectedTag = name; await fillTags(); } else openTagPick();
+  });
   $("#tag-cancel").addEventListener("click", () => ($("#tag-modal").hidden = true));
 
-  function setTaskDateLabel() { let s = fmtFull(taskDate); if (taskTime) s += " · " + taskTime; s += taskNotify ? " 🔔" : ""; $("#t-date").textContent = s; }
+  function setTaskDateLabel() { let s = fmtFull(taskDate); if (taskTime) s += " · " + taskTime; $("#t-date").innerHTML = s + " " + (taskNotify ? BELL_ON : BELL_OFF); }
   $("#t-date").addEventListener("click", () => openCalendar({ value: taskDate, mode: "task", time: taskTime, notify: taskNotify, onPick: (v, ex) => { taskDate = v; taskTime = (ex && ex.time) || ""; taskNotify = !!(ex && ex.notify); setTaskDateLabel(); } }));
 
+  /* вложения */
+  function readDataURL(f) { return new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); }); }
+  function renderAttachEdit() {
+    $("#t-attach-list").innerHTML = currentAttachments.map((a, i) => {
+      const inner = a.type && a.type.startsWith("image/") ? `<img src="${a.url}" alt="">` : `<div class="att-file">${esc((a.name || "файл").slice(0, 14))}</div>`;
+      return `<div class="att">${inner}<button type="button" class="att-x" data-i="${i}">✕</button></div>`;
+    }).join("");
+    $$("#t-attach-list .att-x").forEach((b) => b.addEventListener("click", () => { currentAttachments.splice(+b.dataset.i, 1); renderAttachEdit(); }));
+  }
+  $("#t-attach").addEventListener("click", () => $("#t-file").click());
+  $("#t-file").addEventListener("change", async (e) => {
+    for (const f of e.target.files) {
+      if (f.size > 1500000) { toast("файл слишком большой (нужен сервер)"); continue; }
+      currentAttachments.push({ name: f.name, type: f.type, url: await readDataURL(f) });
+    }
+    e.target.value = ""; renderAttachEdit();
+  });
+
   async function newTask() {
-    editingTaskId = null; selectedTag = null;
+    editingTaskId = null; currentTaskId = null; currentTask = null; selectedTag = null;
     $("#t-title").value = ""; $("#t-desc").value = "";
     taskDate = tomorrowStr(); taskTime = "12:00"; taskNotify = true; setTaskDateLabel();
+    currentAttachments = []; renderAttachEdit();
     $("#task-form-title").textContent = "новая задача"; $("#t-submit").textContent = "Добавить"; $("#t-delete").hidden = true;
     await fillTags(); showView("task"); setTimeout(() => $("#t-title").focus(), 40);
   }
   async function openTaskEdit(t) {
-    editingTaskId = t.id; selectedTag = t.tag || null;
+    editingTaskId = t.id; currentTaskId = t.id; currentTask = t; selectedTag = t.tag || null;
     $("#t-title").value = t.title || ""; $("#t-desc").value = t.description || "";
     taskDate = t.due_date || tomorrowStr(); taskTime = t.due_time || ""; taskNotify = t.notify !== false; setTaskDateLabel();
+    currentAttachments = (t.attachments || []).slice(); renderAttachEdit();
     $("#task-form-title").textContent = "задача"; $("#t-submit").textContent = "Сохранить"; $("#t-delete").hidden = false;
     await fillTags(); showView("task");
   }
   $("#task-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const title = $("#t-title").value.trim(); if (!title) return;
-    const fields = { title, description: $("#t-desc").value.trim(), due_date: taskDate || null, due_time: taskTime || null, notify: taskNotify, tag: selectedTag || null };
-    if (editingTaskId) await Store.updateTask(editingTaskId, fields); else await Store.addTask(fields);
-    editingTaskId = null; showView("tasks");
+    const fields = { title, description: $("#t-desc").value.trim(), due_date: taskDate || null, due_time: taskTime || null, notify: taskNotify, tag: selectedTag || null, attachments: currentAttachments };
+    if (editingTaskId) { const id = editingTaskId; await Store.updateTask(id, fields); editingTaskId = null; openTaskPage(id); }
+    else { await Store.addTask(fields); editingTaskId = null; showView("tasks"); }
   });
   $("#t-delete").addEventListener("click", async () => { if (editingTaskId && await askConfirm("Удалить задачу?")) { await Store.deleteTask(editingTaskId); editingTaskId = null; showView("tasks"); } });
-
-  /* ---------- ЗАМЕТКИ: список ---------- */
-  let notesById = {};
-  async function renderNotesList() {
-    const notes = await Store.notes();
-    notesById = {}; notes.forEach((n) => (notesById[n.id] = n));
-    $("#notes-empty").hidden = notes.length > 0;
-    $("#note-list").innerHTML = notes.map((n) => `<li class="note-item swipeable" data-id="${n.id}"><div class="swipe-del">${TRASH_SVG}</div><div class="swipe-row">${esc(n.title) || "без названия"}</div></li>`).join("");
-    $$("#note-list .note-item").forEach((li) => attachSwipe(li, async () => { await Store.deleteNote(li.dataset.id); renderNotesList(); }));
-  }
-  $("#note-list").addEventListener("click", (e) => {
-    if (justSwiped) return;
-    const li = e.target.closest(".note-item");
-    if (li && notesById[li.dataset.id]) openNoteEdit(notesById[li.dataset.id]);
-  });
-
-  /* ---------- ЗАМЕТКА: редактор ---------- */
-  let editingNoteId = null, savedRange = null;
-  const FMT_MAP = {
-    bold: { tags: ["b", "strong"], test: (cs) => parseInt(cs.fontWeight, 10) >= 600 || cs.fontWeight === "bold" },
-    italic: { tags: ["i", "em"], test: (cs) => cs.fontStyle === "italic" },
-    underline: { tags: ["u"], test: (cs) => cs.textDecorationLine.includes("underline") },
-  };
-  function isFmtActive(cmd) {
-    const ed = $("#n-body"); const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return false;
-    let node = sel.anchorNode; if (!node || !ed.contains(node)) return false;
-    const { tags, test } = FMT_MAP[cmd];
-    while (node && node !== ed) { if (node.nodeType === 1) { if (tags.includes(node.tagName.toLowerCase())) return true; try { if (test(getComputedStyle(node))) return true; } catch {} } node = node.parentNode; }
-    return false;
-  }
-  function updateFmtStates() { ["bold", "italic", "underline"].forEach((cmd) => $(`.fmt[data-cmd="${cmd}"]`).classList.toggle("is-on", isFmtActive(cmd))); }
-  ["keyup", "mouseup", "input"].forEach((ev) => $("#n-body").addEventListener(ev, updateFmtStates));
-  document.addEventListener("selectionchange", () => { if (document.activeElement === $("#n-body")) updateFmtStates(); });
-
-  $$(".fmt").forEach((b) => b.addEventListener("mousedown", (e) => {
-    e.preventDefault(); const cmd = b.dataset.cmd;
-    if (cmd === "link") { const sel = window.getSelection(); savedRange = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null; $("#link-input").value = ""; $("#link-modal").hidden = false; setTimeout(() => $("#link-input").focus(), 30); }
-    else { $("#n-body").focus(); document.execCommand(cmd, false, null); updateFmtStates(); }
-  }));
-  $("#link-ok").addEventListener("click", () => {
-    let url = $("#link-input").value.trim(); $("#link-modal").hidden = true; if (!url) return;
-    if (!/^https?:\/\//i.test(url) && !url.startsWith("mailto:")) url = "https://" + url;
-    const ed = $("#n-body"); ed.focus();
-    const sel = window.getSelection(); sel.removeAllRanges(); if (savedRange) sel.addRange(savedRange);
-    if (!sel.rangeCount) { const a = document.createElement("a"); a.href = url; a.textContent = url; ed.appendChild(a); return; }
-    const range = sel.getRangeAt(0); const a = document.createElement("a"); a.href = url;
-    if (range.collapsed) { a.textContent = url; range.insertNode(a); } else { a.appendChild(range.extractContents()); range.insertNode(a); }
-    sel.removeAllRanges(); updateFmtStates();
-  });
-  $("#link-cancel").addEventListener("click", () => ($("#link-modal").hidden = true));
-
-  function newNote() {
-    editingNoteId = null; $("#n-title").value = ""; $("#n-body").innerHTML = ""; $("#n-delete").hidden = true; updateFmtStates();
-    showView("note"); setTimeout(() => $("#n-title").focus(), 40);
-  }
-  function openNoteEdit(n) {
-    if (!n) return;
-    editingNoteId = n.id; $("#n-title").value = n.title || ""; $("#n-body").innerHTML = n.body_html || ""; $("#n-delete").hidden = false; updateFmtStates();
-    showView("note");
-  }
-  $("#note-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const title = $("#n-title").value.trim(); const body = $("#n-body").innerHTML.trim();
-    if (!title && !body) { showView("notes"); return; }
-    await Store.saveNote({ id: editingNoteId, title, body_html: body });
-    editingNoteId = null; showView("notes");
-  });
-  $("#n-delete").addEventListener("click", async () => { if (editingNoteId && await askConfirm("Удалить заметку?")) { await Store.deleteNote(editingNoteId); editingNoteId = null; showView("notes"); } });
 
   /* ---------- Вход / аккаунт ---------- */
   let hasStarted = false;

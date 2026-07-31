@@ -30,9 +30,9 @@
   <div class="auth-card">
     <div class="brand brand--big">
       <span class="logo" aria-hidden="true"></span>
-      <span class="wordmark">gun.co</span>
+      <span class="wordmark">gunco</span>
     </div>
-    <p class="auth-tagline">Задачи и заметки. Ничего лишнего.</p>
+    <p class="auth-tagline">Задачи. Ничего лишнего.</p>
     <form id="auth-form" class="auth-form" autocomplete="on">
       <input id="auth-email" class="field" type="email" placeholder="e-mail" required autocomplete="email" />
       <input id="auth-pass" class="field" type="password" placeholder="пароль" required autocomplete="current-password" minlength="6" />
@@ -55,7 +55,7 @@
   <header class="topbar">
     <div class="brand">
       <span class="logo" aria-hidden="true"></span>
-      <span class="wordmark">gun.co</span>
+      <span class="wordmark">gunco</span>
     </div>
     <div class="topbar-actions">
       <button id="theme-btn" class="icon-btn" title="Тема" aria-label="Сменить тему">◐</button>
@@ -65,11 +65,10 @@
     </div>
   </header>
 
-  <nav class="head-tabs" role="tablist">
-    <button class="head-tab is-active" data-view="tasks" role="tab">задачи</button>
-    <button class="head-tab" data-view="notes" role="tab">заметки</button>
-    <button id="head-add" class="head-add" type="button" aria-label="Создать">+</button>
-  </nav>
+  <div class="subhead">
+    <button id="back-btn" class="back-btn" type="button" aria-label="Назад" hidden>‹</button>
+    <div id="page-title" class="page-title">задачи</div>
+  </div>
 
   <main class="main">
 
@@ -77,15 +76,15 @@
     <section id="view-tasks" class="view">
       <div class="pane pane--tasks">
         <div class="pane-head-tools">
-            <button id="date-filter" class="chip chip--date" type="button">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9h17M8 3v3M16 3v3"/></svg>
-              <span id="date-filter-label">все дни</span>
-            </button>
-            <button id="date-clear" class="chip" type="button" hidden>✕</button>
-            <button id="tags-filter" class="chip" type="button">теги</button>
-            <button id="toggle-done" class="icon-toggle" type="button" aria-pressed="false" title="Показать выполненные">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M8 12.4l2.6 2.6 5-5.2"/></svg>
-            </button>
+          <button id="date-filter" class="chip chip--date" type="button">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9h17M8 3v3M16 3v3"/></svg>
+            <span id="date-filter-label">все дни</span>
+          </button>
+          <button id="date-clear" class="chip" type="button" hidden>✕</button>
+          <button id="tags-filter" class="chip" type="button">теги</button>
+          <button id="toggle-done" class="icon-toggle" type="button" aria-pressed="false" title="Показать выполненные">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M8 12.4l2.6 2.6 5-5.2"/></svg>
+          </button>
         </div>
         <div id="task-list" class="task-list scroll"></div>
         <p id="tasks-empty" class="empty" hidden>Пока нет задач</p>
@@ -99,21 +98,39 @@
       </div>
     </section>
 
-    <!-- ЗАМЕТКИ (список) -->
-    <section id="view-notes" class="view" hidden>
-      <div class="pane pane--noteslist">
-        <ul id="note-list" class="note-list scroll"></ul>
-        <p id="notes-empty" class="empty" hidden>Пока нет заметок</p>
+    <!-- СТРАНИЦА ЗАДАЧИ (просмотр) -->
+    <section id="view-taskpage" class="view" hidden>
+      <div class="taskpage scroll">
+        <div class="taskpage-head">
+          <h1 id="tp-title" class="taskpage-title" title="Скопировать"></h1>
+          <button id="tp-edit" class="round-btn" type="button" aria-label="Редактировать">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5l4 4M4 20l4.5-1 9-9-4-4-9 9L4 20z"/></svg>
+          </button>
+        </div>
+        <div class="taskpage-meta">
+          <button id="tp-date" class="tp-date" type="button"></button>
+          <div id="tp-tags" class="tp-tags"></div>
+        </div>
+        <div id="tp-attach" class="taskpage-attach"></div>
+        <div id="tp-desc" class="taskpage-desc" title="Скопировать"></div>
       </div>
     </section>
 
     <!-- РЕДАКТОР ЗАДАЧИ -->
     <section id="view-task" class="view view--form" hidden>
-      <form id="task-form" class="form form--foot">
-        <div class="form-scroll scroll">
+      <form id="task-form" class="form form--fit">
+        <div class="form-body">
           <h2 id="task-form-title" class="h-title">новая задача</h2>
           <input id="t-title" class="field" type="text" placeholder="название" required />
           <textarea id="t-desc" class="field field--desc" placeholder="описание"></textarea>
+          <div class="attach-row">
+            <button id="t-attach" class="btn btn--attach" type="button">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11l-8.5 8.5a4.5 4.5 0 01-6.4-6.4l8.5-8.5a3 3 0 014.3 4.3l-8.5 8.5a1.5 1.5 0 01-2.2-2.2l7.8-7.8"/></svg>
+              Прикрепить файлы
+            </button>
+            <input id="t-file" type="file" accept="image/*,*/*" multiple hidden />
+          </div>
+          <div id="t-attach-list" class="attach-list"></div>
           <div class="form-row">
             <label class="form-label">дата</label>
             <button id="t-date" class="field field--pick" type="button"></button>
@@ -132,30 +149,9 @@
       </form>
     </section>
 
-    <!-- РЕДАКТОР ЗАМЕТКИ -->
-    <section id="view-note" class="view view--form" hidden>
-      <form id="note-form" class="form form--foot">
-        <div class="form-scroll form-scroll--notes">
-          <h2 class="h-title">заметка</h2>
-          <input id="n-title" class="field" type="text" placeholder="заголовок" required />
-          <div class="editor-toolbar">
-            <button type="button" class="fmt" data-cmd="bold" title="Жирный"><b>B</b></button>
-            <button type="button" class="fmt" data-cmd="italic" title="Курсив"><i>I</i></button>
-            <button type="button" class="fmt" data-cmd="underline" title="Подчёркнутый"><u>U</u></button>
-            <button type="button" class="fmt" data-cmd="link" title="Ссылка">🔗</button>
-          </div>
-          <div id="n-body" class="field field--editor scroll" contenteditable="true" data-placeholder="текст заметки…"></div>
-        </div>
-        <div class="form-foot">
-          <div class="form-actions">
-            <button class="btn btn--solid" type="submit">Сохранить</button>
-            <button id="n-delete" class="btn btn--danger" type="button" hidden>Удалить</button>
-          </div>
-        </div>
-      </form>
-    </section>
-
   </main>
+
+  <button id="fab" class="fab" type="button" aria-label="Новая задача">+</button>
 </div>
 
 <!-- Календарь -->
@@ -200,15 +196,11 @@
   </div>
 </div>
 
-<!-- Ввод ссылки -->
-<div id="link-modal" class="modal" hidden>
+<!-- Выбор тега для задачи -->
+<div id="tagpick-modal" class="modal" hidden>
   <div class="modal-card">
-    <div class="modal-title">Ссылка</div>
-    <input id="link-input" class="field" type="url" placeholder="https://…" />
-    <div class="form-actions">
-      <button id="link-ok" class="btn btn--solid" type="button">Ок</button>
-      <button id="link-cancel" class="btn" type="button">Отмена</button>
-    </div>
+    <div class="modal-title">тег</div>
+    <div id="tagpick-pills" class="tag-pills"></div>
   </div>
 </div>
 
@@ -234,6 +226,8 @@
     </div>
   </div>
 </div>
+
+<div id="toast" class="toast" hidden></div>
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
