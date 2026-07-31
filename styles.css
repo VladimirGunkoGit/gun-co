@@ -57,9 +57,10 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 
 /* ---- Бренд ---- */
 .brand{ display:inline-flex; align-items:center; gap:8px; }
+.brand-btn{ background:transparent; border:none; padding:0; cursor:pointer; }
 .logo{ width:30px; height:22px; display:inline-block; flex:none; background:currentColor;
   -webkit-mask:url("icons/gun.svg") center / contain no-repeat; mask:url("icons/gun.svg") center / contain no-repeat; }
-.wordmark{ font-family:var(--font-title); font-weight:600; font-size:18px; letter-spacing:.01em; }
+.wordmark{ font-family:var(--font-title); font-weight:600; font-size:14.4px; letter-spacing:.01em; }
 .brand--big .logo{ width:66px; height:48px; }
 .brand--big .wordmark{ font-size:var(--fs-title); }
 
@@ -240,7 +241,9 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 @media (min-width:860px){
   .topbar{ padding-left:5vw; padding-right:5vw; }
   .subhead{ padding-left:5vw; padding-right:5vw; }
-  .pane, .slider-wrap, .taskpage{ padding-left:5vw; padding-right:5vw; }
-  .form--fit .form-body, .form-foot{ padding-left:5vw; padding-right:5vw; }
+  .pane, .slider-wrap{ padding-left:5vw; padding-right:5vw; }
+  /* форма создания и карточка задачи — колонка 60% по центру */
+  .form--fit .form-body, .form--fit .form-foot{ width:60%; margin-inline:auto; padding-left:0; padding-right:0; }
+  .taskpage{ width:60%; margin-inline:auto; padding-left:0; padding-right:0; }
   .fab{ right:34px; bottom:34px; }
 }

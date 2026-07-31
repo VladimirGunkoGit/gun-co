@@ -187,6 +187,7 @@
   }
   $("#back-btn").addEventListener("click", goBack);
   $("#fab").addEventListener("click", () => newTask());
+  $("#brand-home").addEventListener("click", () => showView("tasks")); // логотип → все задачи
 
   /* свайп вправо = назад (без сохранения) */
   (function () {
@@ -198,6 +199,18 @@
 
   /* ---------- Список задач ---------- */
   let showDone = false, dateFilter = "", filterTags = new Set(), taskCount = 5, tasksById = {};
+
+  /* запоминание фильтров (держатся, пока пользователь сам не изменит) */
+  const FKEY = "gunco_filters";
+  function saveFilters() { try { localStorage.setItem(FKEY, JSON.stringify({ dateFilter, tags: [...filterTags], showDone })); } catch {} }
+  function loadFilters() { try { const f = JSON.parse(localStorage.getItem(FKEY)) || {}; dateFilter = f.dateFilter || ""; filterTags = new Set(f.tags || []); showDone = !!f.showDone; } catch {} }
+  function applyFiltersUI() {
+    $("#date-filter-label").textContent = dateFilter ? fmtFull(dateFilter) : "все дни";
+    $("#date-filter").classList.toggle("is-set", !!dateFilter);
+    $("#date-clear").hidden = !dateFilter;
+    $("#tags-filter").classList.toggle("is-on", filterTags.size > 0);
+    $("#toggle-done").setAttribute("aria-pressed", showDone);
+  }
   function dayHead(day) {
     if (!day) return "без даты";
     const [y, m, d] = day.split("-").map(Number);
@@ -243,20 +256,20 @@
   });
 
   /* фильтры */
-  $("#toggle-done").addEventListener("click", (e) => { showDone = !showDone; e.currentTarget.setAttribute("aria-pressed", showDone); renderTasks(); });
-  $("#date-filter").addEventListener("click", () => openCalendar({ value: dateFilter, mode: "filter", allowAll: true, onPick: (v) => { dateFilter = v; $("#date-filter-label").textContent = v ? fmtFull(v) : "все дни"; $("#date-filter").classList.toggle("is-set", !!v); $("#date-clear").hidden = !v; renderTasks(); } }));
-  $("#date-clear").addEventListener("click", () => { dateFilter = ""; $("#date-filter-label").textContent = "все дни"; $("#date-filter").classList.remove("is-set"); $("#date-clear").hidden = true; renderTasks(); });
+  $("#toggle-done").addEventListener("click", (e) => { showDone = !showDone; e.currentTarget.setAttribute("aria-pressed", showDone); saveFilters(); renderTasks(); });
+  $("#date-filter").addEventListener("click", () => openCalendar({ value: dateFilter, mode: "filter", allowAll: true, onPick: (v) => { dateFilter = v; $("#date-filter-label").textContent = v ? fmtFull(v) : "все дни"; $("#date-filter").classList.toggle("is-set", !!v); $("#date-clear").hidden = !v; saveFilters(); renderTasks(); } }));
+  $("#date-clear").addEventListener("click", () => { dateFilter = ""; $("#date-filter-label").textContent = "все дни"; $("#date-filter").classList.remove("is-set"); $("#date-clear").hidden = true; saveFilters(); renderTasks(); });
 
   async function renderTagsCloud() {
     const q = ($("#tags-search").value || "").trim().toLowerCase();
     const tags = await Store.tags();
     const list = q ? tags.filter((t) => t.toLowerCase().includes(q)) : tags;
     $("#tags-cloud").innerHTML = list.length ? list.map((t) => `<button type="button" class="tag ${filterTags.has(t) ? "is-on" : ""}" data-tag="${esc(t)}">${esc(t)}</button>`).join("") : `<span class="empty">ничего не найдено</span>`;
-    $$("#tags-cloud .tag[data-tag]").forEach((b) => b.addEventListener("click", () => { const t = b.dataset.tag; filterTags.has(t) ? filterTags.delete(t) : filterTags.add(t); $("#tags-filter").classList.toggle("is-on", filterTags.size > 0); renderTagsCloud(); renderTasks(); }));
+    $$("#tags-cloud .tag[data-tag]").forEach((b) => b.addEventListener("click", () => { const t = b.dataset.tag; filterTags.has(t) ? filterTags.delete(t) : filterTags.add(t); $("#tags-filter").classList.toggle("is-on", filterTags.size > 0); saveFilters(); renderTagsCloud(); renderTasks(); }));
   }
   $("#tags-filter").addEventListener("click", async () => { $("#tags-search").value = ""; $(".search-wrap").classList.remove("has-text"); await renderTagsCloud(); $("#tags-menu").hidden = false; setTimeout(() => $("#tags-search").focus(), 30); });
   $("#tags-search").addEventListener("input", (e) => { $(".search-wrap").classList.toggle("has-text", !!e.target.value); renderTagsCloud(); });
-  $("#tags-reset").addEventListener("click", async () => { filterTags.clear(); $("#tags-filter").classList.remove("is-on"); await renderTagsCloud(); renderTasks(); });
+  $("#tags-reset").addEventListener("click", async () => { filterTags.clear(); $("#tags-filter").classList.remove("is-on"); saveFilters(); await renderTagsCloud(); renderTasks(); });
   $("#tags-menu").addEventListener("click", (e) => { if (e.target.id === "tags-menu") $("#tags-menu").hidden = true; });
 
   /* ползунок */
@@ -308,7 +321,6 @@
   /* ---------- РЕДАКТОР задачи ---------- */
   let editingTaskId = null, selectedTag = null, tagAddContext = "form";
   let taskDate = tomorrowStr(), taskTime = "12:00", taskNotify = true;
-  let currentAttachments = [];
 
   async function fillTags() {
     const tags = await Store.tags();
@@ -328,29 +340,10 @@
   function setTaskDateLabel() { let s = fmtFull(taskDate); if (taskTime) s += " · " + taskTime; $("#t-date").innerHTML = s + " " + (taskNotify ? BELL_ON : BELL_OFF); }
   $("#t-date").addEventListener("click", () => openCalendar({ value: taskDate, mode: "task", time: taskTime, notify: taskNotify, onPick: (v, ex) => { taskDate = v; taskTime = (ex && ex.time) || ""; taskNotify = !!(ex && ex.notify); setTaskDateLabel(); } }));
 
-  /* вложения */
-  function readDataURL(f) { return new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); }); }
-  function renderAttachEdit() {
-    $("#t-attach-list").innerHTML = currentAttachments.map((a, i) => {
-      const inner = a.type && a.type.startsWith("image/") ? `<img src="${a.url}" alt="">` : `<div class="att-file">${esc((a.name || "файл").slice(0, 14))}</div>`;
-      return `<div class="att">${inner}<button type="button" class="att-x" data-i="${i}">✕</button></div>`;
-    }).join("");
-    $$("#t-attach-list .att-x").forEach((b) => b.addEventListener("click", () => { currentAttachments.splice(+b.dataset.i, 1); renderAttachEdit(); }));
-  }
-  $("#t-attach").addEventListener("click", () => $("#t-file").click());
-  $("#t-file").addEventListener("change", async (e) => {
-    for (const f of e.target.files) {
-      if (f.size > 1500000) { toast("файл слишком большой (нужен сервер)"); continue; }
-      currentAttachments.push({ name: f.name, type: f.type, url: await readDataURL(f) });
-    }
-    e.target.value = ""; renderAttachEdit();
-  });
-
   async function newTask() {
     editingTaskId = null; currentTaskId = null; currentTask = null; selectedTag = null;
     $("#t-title").value = ""; $("#t-desc").value = "";
     taskDate = tomorrowStr(); taskTime = "12:00"; taskNotify = true; setTaskDateLabel();
-    currentAttachments = []; renderAttachEdit();
     $("#task-form-title").textContent = "новая задача"; $("#t-submit").textContent = "Добавить"; $("#t-delete").hidden = true;
     await fillTags(); showView("task"); setTimeout(() => $("#t-title").focus(), 40);
   }
@@ -358,14 +351,13 @@
     editingTaskId = t.id; currentTaskId = t.id; currentTask = t; selectedTag = t.tag || null;
     $("#t-title").value = t.title || ""; $("#t-desc").value = t.description || "";
     taskDate = t.due_date || tomorrowStr(); taskTime = t.due_time || ""; taskNotify = t.notify !== false; setTaskDateLabel();
-    currentAttachments = (t.attachments || []).slice(); renderAttachEdit();
     $("#task-form-title").textContent = "задача"; $("#t-submit").textContent = "Сохранить"; $("#t-delete").hidden = false;
     await fillTags(); showView("task");
   }
   $("#task-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const title = $("#t-title").value.trim(); if (!title) return;
-    const fields = { title, description: $("#t-desc").value.trim(), due_date: taskDate || null, due_time: taskTime || null, notify: taskNotify, tag: selectedTag || null, attachments: currentAttachments };
+    const fields = { title, description: $("#t-desc").value.trim(), due_date: taskDate || null, due_time: taskTime || null, notify: taskNotify, tag: selectedTag || null };
     if (editingTaskId) { const id = editingTaskId; await Store.updateTask(id, fields); editingTaskId = null; openTaskPage(id); }
     else { await Store.addTask(fields); editingTaskId = null; showView("tasks"); }
   });
@@ -379,6 +371,7 @@
     const s = await Store.settings();
     taskCount = s.count || 5; slider.value = Math.min(taskCount, 9); sliderVal.value = taskCount;
     document.documentElement.setAttribute("data-theme", s.theme || "dark");
+    loadFilters(); applyFiltersUI();
     await fillTags(); setTaskDateLabel();
     showView("tasks");
   }
