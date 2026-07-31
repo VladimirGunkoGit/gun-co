@@ -27,7 +27,7 @@
 
 <!-- ЭКРАН ВХОДА -->
 <div id="auth" class="auth" hidden>
-  <div class="auth-card">
+  <div class="auth-top">
     <div class="brand brand--big">
       <span class="logo" aria-hidden="true"></span>
       <span class="wordmark">gunco</span>
@@ -37,7 +37,6 @@
       <input id="auth-email" class="field" type="email" placeholder="e-mail" required autocomplete="email" />
       <input id="auth-pass" class="field" type="password" placeholder="пароль" required autocomplete="current-password" minlength="6" />
       <button id="auth-signin" class="btn btn--solid" type="submit">Войти</button>
-      <button id="auth-signup" class="btn" type="button">Создать аккаунт</button>
     </form>
     <div class="auth-divider"><span>или</span></div>
     <button id="auth-google" class="btn btn--google" type="button">
@@ -45,7 +44,9 @@
       Войти через Google
     </button>
     <p id="auth-msg" class="auth-msg"></p>
-    <button id="auth-close" class="btn auth-back" type="button" hidden>Назад</button>
+  </div>
+  <div class="auth-bottom">
+    <button id="auth-signup" class="btn" type="button">Создать аккаунт</button>
     <p id="auth-mode-hint" class="auth-hint"></p>
   </div>
 </div>

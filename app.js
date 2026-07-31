@@ -365,7 +365,21 @@
 
   /* ---------- Вход / аккаунт ---------- */
   let hasStarted = false;
-  function authMsg(t) { $("#auth-msg").textContent = t || ""; }
+  function authMsg(t, type) { const el = $("#auth-msg"); el.textContent = t || ""; el.classList.toggle("is-error", type === "error"); }
+  function trAuthError(msg) {
+    const m = (msg || "").toLowerCase();
+    if (m.includes("already registered") || m.includes("already been registered") || m.includes("already exists")) return "Аккаунт с такой почтой уже существует";
+    if (m.includes("invalid login credentials")) return "Неверная почта или пароль";
+    if (m.includes("email not confirmed")) return "Почта не подтверждена — проверьте письмо";
+    if (m.includes("password should be at least") || m.includes("password is too short")) return "Пароль слишком короткий (минимум 6 символов)";
+    if (m.includes("unable to validate email") || m.includes("invalid email") || m.includes("invalid format")) return "Некорректный e-mail";
+    if (m.includes("rate limit") || m.includes("too many") || m.includes("for security purposes")) return "Слишком много попыток, попробуйте позже";
+    if (m.includes("failed to fetch") || m.includes("network")) return "Нет связи с сервером";
+    if (m.includes("user not found")) return "Пользователь не найден";
+    if (m.includes("signups not allowed") || m.includes("signup is disabled")) return "Регистрация отключена";
+    if (m.includes("email logins are disabled")) return "Вход по e-mail отключён";
+    return "Не получилось. Проверьте данные и попробуйте снова";
+  }
   async function startApp() {
     hasStarted = true; $("#auth").hidden = true; $("#app").hidden = false;
     const s = await Store.settings();
@@ -377,25 +391,23 @@
   }
   function showAuth() {
     $("#app").hidden = true; $("#auth").hidden = false;
-    $("#auth-close").hidden = !hasStarted;
     $("#auth-mode-hint").textContent = HAS_SUPABASE ? "Данные синхронизируются между устройствами." : "Локальный режим: Supabase не настроен, данные хранятся в этом браузере.";
     $("#auth-google").disabled = !HAS_SUPABASE;
   }
-  $("#auth-close").addEventListener("click", () => { $("#auth").hidden = true; $("#app").hidden = false; });
   $("#account-btn").addEventListener("click", async () => { if (sb && Store.userId) { if (await askConfirm("Выйти из аккаунта?")) { await sb.auth.signOut(); Store.userId = null; showAuth(); } } else showAuth(); });
 
   if (HAS_SUPABASE) {
     $("#auth-form").addEventListener("submit", async (e) => {
       e.preventDefault(); authMsg("…");
       const { data, error } = await sb.auth.signInWithPassword({ email: $("#auth-email").value.trim(), password: $("#auth-pass").value });
-      if (error) return authMsg("Не удалось войти: " + error.message);
+      if (error) return authMsg(trAuthError(error.message), "error");
       Store.userId = data.user.id; startApp();
     });
     $("#auth-signup").addEventListener("click", async () => {
       authMsg("…"); const email = $("#auth-email").value.trim(); const password = $("#auth-pass").value;
-      if (password.length < 6) return authMsg("Пароль минимум 6 символов");
+      if (password.length < 6) return authMsg("Пароль слишком короткий (минимум 6 символов)", "error");
       const { data, error } = await sb.auth.signUp({ email, password });
-      if (error) return authMsg("Ошибка: " + error.message);
+      if (error) return authMsg(trAuthError(error.message), "error");
       if (data.session) { Store.userId = data.user.id; startApp(); } else authMsg("Проверьте почту для подтверждения регистрации.");
     });
     $("#auth-google").addEventListener("click", async () => { await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href } }); });

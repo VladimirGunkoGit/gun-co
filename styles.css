@@ -98,17 +98,18 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 ::selection{ background:var(--sel-bg); }
 
 /* ============ ВХОД ============ */
-.auth{ min-height:100%; display:grid; place-items:center; padding:calc(var(--safe-top) + 24px) 24px calc(var(--safe-bottom) + 24px); }
-.auth-card{ width:100%; max-width:340px; display:flex; flex-direction:column; gap:12px; text-align:center; }
-.auth-card .brand{ justify-content:center; margin-bottom:4px; }
+.auth{ height:100%; display:flex; flex-direction:column; padding:calc(var(--safe-top) + 20px) 24px calc(var(--safe-bottom) + 14px); }
+.auth-top{ flex:1; width:100%; max-width:340px; margin:0 auto; display:flex; flex-direction:column; justify-content:center; gap:12px; text-align:center; }
+.auth-bottom{ flex:none; width:100%; max-width:340px; margin:0 auto; display:flex; flex-direction:column; gap:12px; }
+.auth-top .brand{ justify-content:center; margin-bottom:4px; }
 .auth-tagline{ color:var(--muted); margin:0 0 12px; }
 .auth-form{ display:flex; flex-direction:column; gap:10px; }
 .auth-divider{ position:relative; text-align:center; color:var(--muted); margin:6px 0; }
 .auth-divider::before{ content:""; position:absolute; top:50%; left:0; right:0; height:1px; background:var(--muted); opacity:.35; }
 .auth-divider span{ position:relative; background:var(--bg); padding:0 12px; }
 .auth-msg{ color:var(--muted); min-height:1em; margin:4px 0 0; }
-.auth-back{ margin-top:4px; }
-.auth-hint{ color:var(--muted); font-size:var(--fs-body); opacity:.7; margin:0; }
+.auth-msg.is-error{ color:#e5484d; font-weight:600; }
+.auth-hint{ color:var(--muted); font-size:var(--fs-body); opacity:.7; margin:0; text-align:center; }
 
 /* ============ ПРИЛОЖЕНИЕ ============ */
 .app{ height:100%; display:flex; flex-direction:column; }
