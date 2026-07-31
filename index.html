@@ -53,10 +53,10 @@
 <!-- ПРИЛОЖЕНИЕ -->
 <div id="app" class="app" hidden>
   <header class="topbar">
-    <button id="brand-home" class="brand brand-btn" type="button" aria-label="На главную">
+    <div class="brand">
       <span class="logo" aria-hidden="true"></span>
       <span class="wordmark">gun.co</span>
-    </button>
+    </div>
     <div class="topbar-actions">
       <button id="theme-btn" class="icon-btn" title="Тема" aria-label="Сменить тему">◐</button>
       <button id="account-btn" class="icon-btn" title="Аккаунт" aria-label="Аккаунт">
@@ -65,23 +65,18 @@
     </div>
   </header>
 
-  <nav class="tabs" role="tablist">
-    <button class="tab" data-view="home" role="tab">Главная</button>
-    <button class="tab is-active" data-view="create" role="tab">Задача</button>
-    <button class="tab" data-view="notes" role="tab">Заметка</button>
+  <nav class="head-tabs" role="tablist">
+    <button class="head-tab is-active" data-view="tasks" role="tab">задачи</button>
+    <button class="head-tab" data-view="notes" role="tab">заметки</button>
+    <button id="head-add" class="head-add" type="button" aria-label="Создать">+</button>
   </nav>
 
   <main class="main">
 
-    <!-- ГЛАВНАЯ -->
-    <section id="view-home" class="view" hidden>
+    <!-- ЗАДАЧИ (список) -->
+    <section id="view-tasks" class="view">
       <div class="pane pane--tasks">
-        <div class="pane-head">
-          <div class="head-left">
-            <h2 class="h-big">задачи</h2>
-            <button id="add-task" class="add-btn" type="button" aria-label="Новая задача">+</button>
-          </div>
-          <div class="pane-head-tools">
+        <div class="pane-head-tools">
             <button id="date-filter" class="chip chip--date" type="button">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9h17M8 3v3M16 3v3"/></svg>
               <span id="date-filter-label">все дни</span>
@@ -91,23 +86,10 @@
             <button id="toggle-done" class="icon-toggle" type="button" aria-pressed="false" title="Показать выполненные">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M8 12.4l2.6 2.6 5-5.2"/></svg>
             </button>
-          </div>
         </div>
-        <ul id="task-list" class="task-list scroll"></ul>
+        <div id="task-list" class="task-list scroll"></div>
         <p id="tasks-empty" class="empty" hidden>Пока нет задач</p>
       </div>
-
-      <div class="pane pane--notes">
-        <div class="pane-head">
-          <div class="head-left">
-            <h2 class="h-big">заметки</h2>
-            <button id="add-note" class="add-btn" type="button" aria-label="Новая заметка">+</button>
-          </div>
-        </div>
-        <ul id="note-list" class="note-list scroll"></ul>
-        <p id="notes-empty" class="empty" hidden>Пока нет заметок</p>
-      </div>
-
       <div class="slider-wrap">
         <div class="slider-caption">сколько показать задач</div>
         <div class="slider-bar">
@@ -117,11 +99,19 @@
       </div>
     </section>
 
-    <!-- СОЗДАТЬ -->
-    <section id="view-create" class="view">
+    <!-- ЗАМЕТКИ (список) -->
+    <section id="view-notes" class="view" hidden>
+      <div class="pane pane--noteslist">
+        <ul id="note-list" class="note-list scroll"></ul>
+        <p id="notes-empty" class="empty" hidden>Пока нет заметок</p>
+      </div>
+    </section>
+
+    <!-- РЕДАКТОР ЗАДАЧИ -->
+    <section id="view-task" class="view view--form" hidden>
       <form id="task-form" class="form form--foot">
         <div class="form-scroll scroll">
-          <h2 class="h-title">новая задача</h2>
+          <h2 id="task-form-title" class="h-title">новая задача</h2>
           <input id="t-title" class="field" type="text" placeholder="название" required />
           <textarea id="t-desc" class="field field--desc" placeholder="описание"></textarea>
           <div class="form-row">
@@ -134,14 +124,16 @@
           </div>
         </div>
         <div class="form-foot">
-          <button class="btn btn--solid" type="submit">Добавить</button>
-          <p id="task-saved" class="saved-msg" hidden>Задача добавлена ✓</p>
+          <div class="form-actions">
+            <button id="t-submit" class="btn btn--solid" type="submit">Добавить</button>
+            <button id="t-delete" class="btn btn--danger" type="button" hidden>Удалить</button>
+          </div>
         </div>
       </form>
     </section>
 
-    <!-- ЗАМЕТКИ -->
-    <section id="view-notes" class="view" hidden>
+    <!-- РЕДАКТОР ЗАМЕТКИ -->
+    <section id="view-note" class="view view--form" hidden>
       <form id="note-form" class="form form--foot">
         <div class="form-scroll form-scroll--notes">
           <h2 class="h-title">заметка</h2>
@@ -157,27 +149,13 @@
         <div class="form-foot">
           <div class="form-actions">
             <button class="btn btn--solid" type="submit">Сохранить</button>
-            <button id="n-new" class="btn" type="button" hidden>Новая</button>
             <button id="n-delete" class="btn btn--danger" type="button" hidden>Удалить</button>
           </div>
-          <p id="note-saved" class="saved-msg" hidden>Заметка сохранена ✓</p>
         </div>
       </form>
     </section>
 
   </main>
-
-  <button id="fab" class="fab" type="button" aria-label="Новая задача">+</button>
-</div>
-
-<!-- Просмотр заметки -->
-<div id="note-view" class="overlay" hidden>
-  <div class="overlay-card">
-    <button id="note-view-close" class="icon-btn overlay-close" aria-label="Закрыть">✕</button>
-    <h2 id="note-view-title" class="h-title"></h2>
-    <div id="note-view-body" class="note-body"></div>
-    <button id="note-view-edit" class="btn">Редактировать</button>
-  </div>
 </div>
 
 <!-- Календарь -->
@@ -230,6 +208,17 @@
     <div class="form-actions">
       <button id="link-ok" class="btn btn--solid" type="button">Ок</button>
       <button id="link-cancel" class="btn" type="button">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<!-- Подтверждение удаления -->
+<div id="confirm-modal" class="modal" hidden>
+  <div class="modal-card confirm-card">
+    <div class="modal-title" id="confirm-text">Удалить?</div>
+    <div class="form-actions">
+      <button id="confirm-yes" class="btn btn--solid" type="button">Да</button>
+      <button id="confirm-no" class="btn" type="button">Отмена</button>
     </div>
   </div>
 </div>

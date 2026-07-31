@@ -15,8 +15,9 @@
   const todayStr = () => dstr(new Date());
   const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return dstr(d); };
   const fmtFull = (s) => { const [y, m, d] = (s || "").split("-"); return d ? `${d}.${m}.${y}` : ""; };
-  const fmtShort = (s) => { const [y, m, d] = (s || "").split("-"); return d ? `${d}.${m}` : ""; };
   const MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+  const MONTHS_SHORT = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+  const WEEKDAYS = ["ВС", "ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ"];
 
   /* ---------- Хранилище ---------- */
   const LKEY = "gunco_data_v1";
@@ -38,29 +39,35 @@
   const Store = {
     userId: null,
     async tasks() {
-      if (sb && this.userId) { const { data } = await sb.from("tasks").select("*").eq("user_id", this.userId).order("due_date", { ascending: true }); return data || []; }
+      if (sb && this.userId) { const { data } = await sb.from("tasks").select("*").eq("user_id", this.userId); return data || []; }
       return Local.ensure().tasks;
     },
     async addTask(t) {
       if (sb && this.userId) { const { data } = await sb.from("tasks").insert({ ...t, user_id: this.userId }).select().single(); return data; }
       const d = Local.ensure(); const row = { id: uid(), is_done: false, ...t }; d.tasks.push(row); Local.write(d); return row;
     },
-    async toggleTask(id, done) {
-      if (sb && this.userId) { await sb.from("tasks").update({ is_done: done }).eq("id", id); return; }
-      const d = Local.ensure(); const t = d.tasks.find((x) => x.id === id); if (t) t.is_done = done; Local.write(d);
+    async updateTask(id, fields) {
+      if (sb && this.userId) { await sb.from("tasks").update(fields).eq("id", id); return; }
+      const d = Local.ensure(); const t = d.tasks.find((x) => x.id === id); if (t) Object.assign(t, fields); Local.write(d);
+    },
+    async toggleTask(id, done) { await this.updateTask(id, { is_done: done }); },
+    async deleteTask(id) {
+      if (sb && this.userId) { await sb.from("tasks").delete().eq("id", id); return; }
+      const d = Local.ensure(); d.tasks = d.tasks.filter((x) => x.id !== id); Local.write(d);
     },
     async notes() {
-      if (sb && this.userId) { const { data } = await sb.from("notes").select("*").eq("user_id", this.userId).order("created_at", { ascending: false }); return data || []; }
-      return Local.ensure().notes.slice().reverse();
+      if (sb && this.userId) { const { data } = await sb.from("notes").select("*").eq("user_id", this.userId).order("updated_at", { ascending: false }); return data || []; }
+      return Local.ensure().notes.slice().sort((a, b) => (b.updated_at || b.created_at || "").localeCompare(a.updated_at || a.created_at || ""));
     },
     async saveNote(n) {
+      const now = new Date().toISOString();
       if (sb && this.userId) {
-        if (n.id) { const { data } = await sb.from("notes").update({ title: n.title, body_html: n.body_html }).eq("id", n.id).select().single(); return data; }
-        const { data } = await sb.from("notes").insert({ title: n.title, body_html: n.body_html, user_id: this.userId }).select().single(); return data;
+        if (n.id) { const { data } = await sb.from("notes").update({ title: n.title, body_html: n.body_html, updated_at: now }).eq("id", n.id).select().single(); return data; }
+        const { data } = await sb.from("notes").insert({ title: n.title, body_html: n.body_html, updated_at: now, user_id: this.userId }).select().single(); return data;
       }
       const d = Local.ensure();
-      if (n.id) { const e = d.notes.find((x) => x.id === n.id); if (e) { e.title = n.title; e.body_html = n.body_html; } }
-      else { n = { id: uid(), created_at: new Date().toISOString(), ...n }; d.notes.push(n); }
+      if (n.id) { const e = d.notes.find((x) => x.id === n.id); if (e) { e.title = n.title; e.body_html = n.body_html; e.updated_at = now; } }
+      else { n = { id: uid(), created_at: now, updated_at: now, ...n }; d.notes.push(n); }
       Local.write(d); return n;
     },
     async deleteNote(id) {
@@ -133,83 +140,129 @@
   $("#cal-done").addEventListener("click", () => { $("#cal").hidden = true; cal.onPick && cal.onPick(cal.value, { time: $("#cal-time").value, notify: !$("#cal-notify").classList.contains("off") }); });
   $("#cal").addEventListener("click", (e) => { if (e.target.id === "cal") $("#cal").hidden = true; });
 
-  /* ---------- Табы / навигация ---------- */
+  /* ---------- Навигация ---------- */
+  let currentView = "tasks";
   function showView(name) {
+    currentView = name;
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
-    $$(".tab").forEach((t) => t.classList.toggle("is-active", t.dataset.view === name));
-    $("#fab").classList.toggle("dim", name === "create"); // на самой странице «новая задача» — полупрозрачная
-    if (name === "home") renderHome();
+    $$(".head-tab").forEach((t) => t.classList.toggle("is-active", t.dataset.view === name));
+    if (name === "tasks") renderTasks();
+    if (name === "notes") renderNotesList();
   }
-  $$(".tab").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
-  $("#brand-home").addEventListener("click", () => showView("home"));
-  $("#add-task").addEventListener("click", () => showView("create"));
-  $("#add-note").addEventListener("click", () => { resetNoteForm(); showView("notes"); });
-  $("#fab").addEventListener("click", () => showView("create"));
+  $$(".head-tab").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
+  // Крупная кнопка «+» у заголовков — создаёт по активному разделу
+  $("#head-add").addEventListener("click", () => { if (currentView === "notes" || currentView === "note") newNote(); else newTask(); });
 
-  /* ---------- Главная ---------- */
+  /* ---------- Подтверждение удаления ---------- */
+  const TRASH_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5.5h6V7M6.5 7l.9 12.5h9.2L17.5 7"/></svg>`;
+  let confirmResolve = null;
+  function askConfirm(text = "Удалить?") {
+    $("#confirm-text").textContent = text;
+    $("#confirm-modal").hidden = false;
+    return new Promise((res) => (confirmResolve = res));
+  }
+  function closeConfirm(val) { $("#confirm-modal").hidden = true; if (confirmResolve) { confirmResolve(val); confirmResolve = null; } }
+  $("#confirm-yes").addEventListener("click", () => closeConfirm(true));
+  $("#confirm-no").addEventListener("click", () => closeConfirm(false));
+  $("#confirm-modal").addEventListener("click", (e) => { if (e.target.id === "confirm-modal") closeConfirm(false); });
+
+  /* ---------- Свайп-удаление строки ---------- */
+  let justSwiped = false;
+  function attachSwipe(el, onDelete) {
+    const fg = el.querySelector(".swipe-row");
+    let startX = 0, startY = 0, dx = 0, dragging = false;
+    el.addEventListener("touchstart", (e) => { const t = e.touches[0]; startX = t.clientX; startY = t.clientY; dx = 0; dragging = true; fg.style.transition = "none"; }, { passive: true });
+    el.addEventListener("touchmove", (e) => {
+      if (!dragging) return;
+      const t = e.touches[0]; const mx = t.clientX - startX, my = t.clientY - startY;
+      if (Math.abs(my) > Math.abs(mx) && Math.abs(my) > 8) { dragging = false; fg.style.transform = ""; return; }
+      dx = Math.min(0, mx);
+      fg.style.transform = `translateX(${dx}px)`;
+    }, { passive: true });
+    el.addEventListener("touchend", async () => {
+      if (!dragging) return; dragging = false;
+      fg.style.transition = "transform .2s";
+      if (dx < -70) {
+        justSwiped = true; setTimeout(() => (justSwiped = false), 400);
+        fg.style.transform = "translateX(-100%)";
+        if (await askConfirm("Удалить?")) await onDelete(); else fg.style.transform = "translateX(0)";
+      } else fg.style.transform = "translateX(0)";
+    });
+  }
+
+  /* ---------- ЗАДАЧИ: список ---------- */
   let showDone = false;
   let dateFilter = "";
   let filterTags = new Set();
   let taskCount = 5;
+  let tasksById = {};
 
-  async function renderHome() { await renderTasks(); await renderNotesList(); }
-
+  function dayHead(day) {
+    if (!day) return "без даты";
+    const [y, m, d] = day.split("-").map(Number);
+    return `${WEEKDAYS[new Date(y, m - 1, d).getDay()]} · ${d} ${MONTHS_SHORT[m - 1]}`;
+  }
+  function taskRow(t) {
+    return `<div class="task swipeable ${t.is_done ? "done" : ""}" data-id="${t.id}">
+      <div class="swipe-del">${TRASH_SVG}</div>
+      <div class="swipe-row">
+        <button class="check ${t.is_done ? "is-done" : ""}" aria-label="Готово"></button>
+        <span class="task-title">${esc(t.title)}</span>
+        ${t.tag ? `<span class="tag task-tag">${esc(t.tag)}</span>` : ``}
+        <span class="task-time">${t.due_time ? esc(t.due_time) : ""}</span>
+      </div>
+    </div>`;
+  }
   async function renderTasks() {
     let tasks = await Store.tasks();
     tasks = tasks.filter((t) => (showDone ? true : !t.is_done));
     if (dateFilter) tasks = tasks.filter((t) => (t.due_date || "").slice(0, 10) === dateFilter);
     if (filterTags.size) tasks = tasks.filter((t) => filterTags.has(t.tag));
-    tasks.sort((a, b) => (a.due_date || "9999").localeCompare(b.due_date || "9999"));
+    tasks.sort((a, b) => (a.due_date || "9999").localeCompare(b.due_date || "9999") || (a.due_time || "99:99").localeCompare(b.due_time || "99:99"));
     const shown = tasks.slice(0, taskCount);
+    tasksById = {}; shown.forEach((t) => (tasksById[t.id] = t));
     $("#tasks-empty").hidden = shown.length > 0;
-    $("#task-list").innerHTML = shown.map((t) => `
-      <li class="task ${t.is_done ? "done" : ""}" data-id="${t.id}">
-        <button class="check ${t.is_done ? "is-done" : ""}" aria-label="Готово"></button>
-        <span class="task-title">${esc(t.title)}</span>
-        ${t.tag ? `<span class="tag task-tag">${esc(t.tag)}</span>` : `<span class="task-tag"></span>`}
-        <span class="task-date">${t.due_date ? fmtShort(t.due_date) : ""}</span>
-      </li>`).join("");
-    $$("#task-list .check").forEach((btn) => btn.addEventListener("click", async (e) => {
-      const li = e.target.closest(".task");
-      await Store.toggleTask(li.dataset.id, !li.classList.contains("done"));
-      renderTasks();
-    }));
+    let html = "", lastDay = null;
+    shown.forEach((t) => {
+      const day = t.due_date ? t.due_date.slice(0, 10) : "";
+      if (day !== lastDay) { if (lastDay !== null) html += "</div></div>"; html += `<div class="day-group"><div class="day-head">${dayHead(day)}</div><div class="day-tasks">`; lastDay = day; }
+      html += taskRow(t);
+    });
+    if (lastDay !== null) html += "</div></div>";
+    $("#task-list").innerHTML = html;
+    $$("#task-list .task").forEach((el) => {
+      el.querySelector(".check").addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await Store.toggleTask(el.dataset.id, !el.classList.contains("done"));
+        renderTasks();
+      });
+      attachSwipe(el, async () => { await Store.deleteTask(el.dataset.id); renderTasks(); });
+    });
   }
-
-  async function renderNotesList() {
-    const notes = await Store.notes();
-    $("#notes-empty").hidden = notes.length > 0;
-    $("#note-list").innerHTML = notes.map((n) => `<li class="note-item" data-id="${n.id}">${esc(n.title) || "без названия"}</li>`).join("");
-    $$("#note-list .note-item").forEach((li) => li.addEventListener("click", () => openNote(notes.find((n) => n.id === li.dataset.id))));
-  }
-
-  /* фильтр: выполненные */
-  $("#toggle-done").addEventListener("click", (e) => { showDone = !showDone; e.currentTarget.setAttribute("aria-pressed", showDone); renderTasks(); });
-
-  /* фильтр: дата */
-  $("#date-filter").addEventListener("click", () => openCalendar({ value: dateFilter, mode: "filter", allowAll: true, onPick: (v) => {
-    dateFilter = v;
-    $("#date-filter-label").textContent = v ? fmtFull(v) : "все дни";
-    $("#date-filter").classList.toggle("is-set", !!v);
-    $("#date-clear").hidden = !v; renderTasks();
-  } }));
-  $("#date-clear").addEventListener("click", () => {
-    dateFilter = ""; $("#date-filter-label").textContent = "все дни"; $("#date-filter").classList.remove("is-set"); $("#date-clear").hidden = true; renderTasks();
+  $("#task-list").addEventListener("click", (e) => {
+    if (justSwiped) return;
+    if (e.target.closest(".check")) return;
+    const el = e.target.closest(".task");
+    if (el && tasksById[el.dataset.id]) openTaskEdit(tasksById[el.dataset.id]);
   });
 
-  /* фильтр: теги (облако + поиск) */
+  /* фильтры */
+  $("#toggle-done").addEventListener("click", (e) => { showDone = !showDone; e.currentTarget.setAttribute("aria-pressed", showDone); renderTasks(); });
+  $("#date-filter").addEventListener("click", () => openCalendar({ value: dateFilter, mode: "filter", allowAll: true, onPick: (v) => {
+    dateFilter = v; $("#date-filter-label").textContent = v ? fmtFull(v) : "все дни"; $("#date-filter").classList.toggle("is-set", !!v); $("#date-clear").hidden = !v; renderTasks();
+  } }));
+  $("#date-clear").addEventListener("click", () => { dateFilter = ""; $("#date-filter-label").textContent = "все дни"; $("#date-filter").classList.remove("is-set"); $("#date-clear").hidden = true; renderTasks(); });
+
   async function renderTagsCloud() {
     const q = ($("#tags-search").value || "").trim().toLowerCase();
     const tags = await Store.tags();
     const list = q ? tags.filter((t) => t.toLowerCase().includes(q)) : tags;
-    const cloud = $("#tags-cloud");
-    cloud.innerHTML = list.length
+    $("#tags-cloud").innerHTML = list.length
       ? list.map((t) => `<button type="button" class="tag ${filterTags.has(t) ? "is-on" : ""}" data-tag="${esc(t)}">${esc(t)}</button>`).join("")
       : `<span class="empty">ничего не найдено</span>`;
     $$("#tags-cloud .tag[data-tag]").forEach((b) => b.addEventListener("click", () => {
       const t = b.dataset.tag; filterTags.has(t) ? filterTags.delete(t) : filterTags.add(t);
-      $("#tags-filter").classList.toggle("is-on", filterTags.size > 0);
-      renderTagsCloud(); renderTasks();
+      $("#tags-filter").classList.toggle("is-on", filterTags.size > 0); renderTagsCloud(); renderTasks();
     }));
   }
   $("#tags-filter").addEventListener("click", async () => { $("#tags-search").value = ""; $(".search-wrap").classList.remove("has-text"); await renderTagsCloud(); $("#tags-menu").hidden = false; setTimeout(() => $("#tags-search").focus(), 30); });
@@ -217,19 +270,16 @@
   $("#tags-reset").addEventListener("click", async () => { filterTags.clear(); $("#tags-filter").classList.remove("is-on"); await renderTagsCloud(); renderTasks(); });
   $("#tags-menu").addEventListener("click", (e) => { if (e.target.id === "tags-menu") $("#tags-menu").hidden = true; });
 
-  /* ползунок + ручной ввод */
+  /* ползунок */
   const slider = $("#task-count");
   const sliderVal = $("#slider-val");
   slider.addEventListener("input", (e) => { taskCount = +e.target.value; sliderVal.value = taskCount; renderTasks(); });
   slider.addEventListener("change", () => Store.saveSettings({ count: taskCount }));
-  sliderVal.addEventListener("change", () => {
-    let v = parseInt(sliderVal.value, 10); if (!v || v < 1) v = 1;
-    taskCount = v; slider.value = Math.min(v, 9); sliderVal.value = v; Store.saveSettings({ count: v }); renderTasks();
-  });
+  sliderVal.addEventListener("change", () => { let v = parseInt(sliderVal.value, 10); if (!v || v < 1) v = 1; taskCount = v; slider.value = Math.min(v, 9); sliderVal.value = v; Store.saveSettings({ count: v }); renderTasks(); });
   sliderVal.addEventListener("focus", () => sliderVal.select());
 
-  /* ---------- Создание задачи ---------- */
-  let selectedTag = null;
+  /* ---------- ЗАДАЧА: редактор ---------- */
+  let editingTaskId = null, selectedTag = null;
   let taskDate = tomorrowStr(), taskTime = "12:00", taskNotify = true;
 
   async function fillTags() {
@@ -240,33 +290,52 @@
     $$("#t-tags .tag[data-tag]").forEach((b) => b.addEventListener("click", () => { selectedTag = b.dataset.tag; fillTags(); }));
     $("#tag-add").addEventListener("click", () => { $("#tag-input").value = ""; $("#tag-modal").hidden = false; setTimeout(() => $("#tag-input").focus(), 30); });
   }
-  $("#tag-ok").addEventListener("click", async () => {
-    const name = ($("#tag-input").value || "").trim().toLowerCase();
-    $("#tag-modal").hidden = true; if (!name) return;
-    await Store.addTag(name); selectedTag = name; await fillTags();
-  });
+  $("#tag-ok").addEventListener("click", async () => { const name = ($("#tag-input").value || "").trim().toLowerCase(); $("#tag-modal").hidden = true; if (!name) return; await Store.addTag(name); selectedTag = name; await fillTags(); });
   $("#tag-cancel").addEventListener("click", () => ($("#tag-modal").hidden = true));
 
-  function setTaskDateLabel() {
-    let s = fmtFull(taskDate); if (taskTime) s += " · " + taskTime; s += taskNotify ? " 🔔" : "";
-    $("#t-date").textContent = s;
-  }
-  function resetTaskDefaults() { taskDate = tomorrowStr(); taskTime = "12:00"; taskNotify = true; setTaskDateLabel(); }
-  $("#t-date").addEventListener("click", () => openCalendar({ value: taskDate, mode: "task", time: taskTime, notify: taskNotify, onPick: (v, ex) => {
-    taskDate = v; taskTime = (ex && ex.time) || ""; taskNotify = !!(ex && ex.notify); setTaskDateLabel();
-  } }));
+  function setTaskDateLabel() { let s = fmtFull(taskDate); if (taskTime) s += " · " + taskTime; s += taskNotify ? " 🔔" : ""; $("#t-date").textContent = s; }
+  $("#t-date").addEventListener("click", () => openCalendar({ value: taskDate, mode: "task", time: taskTime, notify: taskNotify, onPick: (v, ex) => { taskDate = v; taskTime = (ex && ex.time) || ""; taskNotify = !!(ex && ex.notify); setTaskDateLabel(); } }));
 
+  async function newTask() {
+    editingTaskId = null; selectedTag = null;
+    $("#t-title").value = ""; $("#t-desc").value = "";
+    taskDate = tomorrowStr(); taskTime = "12:00"; taskNotify = true; setTaskDateLabel();
+    $("#task-form-title").textContent = "новая задача"; $("#t-submit").textContent = "Добавить"; $("#t-delete").hidden = true;
+    await fillTags(); showView("task"); setTimeout(() => $("#t-title").focus(), 40);
+  }
+  async function openTaskEdit(t) {
+    editingTaskId = t.id; selectedTag = t.tag || null;
+    $("#t-title").value = t.title || ""; $("#t-desc").value = t.description || "";
+    taskDate = t.due_date || tomorrowStr(); taskTime = t.due_time || ""; taskNotify = t.notify !== false; setTaskDateLabel();
+    $("#task-form-title").textContent = "задача"; $("#t-submit").textContent = "Сохранить"; $("#t-delete").hidden = false;
+    await fillTags(); showView("task");
+  }
   $("#task-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const title = $("#t-title").value.trim(); if (!title) return;
-    await Store.addTask({ title, description: $("#t-desc").value.trim(), due_date: taskDate || null, due_time: taskTime || null, notify: taskNotify, tag: selectedTag || null });
-    $("#t-title").value = ""; $("#t-desc").value = ""; resetTaskDefaults();
-    const msg = $("#task-saved"); msg.hidden = false; setTimeout(() => (msg.hidden = true), 1600);
+    const fields = { title, description: $("#t-desc").value.trim(), due_date: taskDate || null, due_time: taskTime || null, notify: taskNotify, tag: selectedTag || null };
+    if (editingTaskId) await Store.updateTask(editingTaskId, fields); else await Store.addTask(fields);
+    editingTaskId = null; showView("tasks");
+  });
+  $("#t-delete").addEventListener("click", async () => { if (editingTaskId && await askConfirm("Удалить задачу?")) { await Store.deleteTask(editingTaskId); editingTaskId = null; showView("tasks"); } });
+
+  /* ---------- ЗАМЕТКИ: список ---------- */
+  let notesById = {};
+  async function renderNotesList() {
+    const notes = await Store.notes();
+    notesById = {}; notes.forEach((n) => (notesById[n.id] = n));
+    $("#notes-empty").hidden = notes.length > 0;
+    $("#note-list").innerHTML = notes.map((n) => `<li class="note-item swipeable" data-id="${n.id}"><div class="swipe-del">${TRASH_SVG}</div><div class="swipe-row">${esc(n.title) || "без названия"}</div></li>`).join("");
+    $$("#note-list .note-item").forEach((li) => attachSwipe(li, async () => { await Store.deleteNote(li.dataset.id); renderNotesList(); }));
+  }
+  $("#note-list").addEventListener("click", (e) => {
+    if (justSwiped) return;
+    const li = e.target.closest(".note-item");
+    if (li && notesById[li.dataset.id]) openNoteEdit(notesById[li.dataset.id]);
   });
 
-  /* ---------- Заметки ---------- */
-  let editingNoteId = null;
-  let savedRange = null;
+  /* ---------- ЗАМЕТКА: редактор ---------- */
+  let editingNoteId = null, savedRange = null;
   const FMT_MAP = {
     bold: { tags: ["b", "strong"], test: (cs) => parseInt(cs.fontWeight, 10) >= 600 || cs.fontWeight === "bold" },
     italic: { tags: ["i", "em"], test: (cs) => cs.fontStyle === "italic" },
@@ -277,10 +346,7 @@
     if (!sel || !sel.rangeCount) return false;
     let node = sel.anchorNode; if (!node || !ed.contains(node)) return false;
     const { tags, test } = FMT_MAP[cmd];
-    while (node && node !== ed) {
-      if (node.nodeType === 1) { if (tags.includes(node.tagName.toLowerCase())) return true; try { if (test(getComputedStyle(node))) return true; } catch {} }
-      node = node.parentNode;
-    }
+    while (node && node !== ed) { if (node.nodeType === 1) { if (tags.includes(node.tagName.toLowerCase())) return true; try { if (test(getComputedStyle(node))) return true; } catch {} } node = node.parentNode; }
     return false;
   }
   function updateFmtStates() { ["bold", "italic", "underline"].forEach((cmd) => $(`.fmt[data-cmd="${cmd}"]`).classList.toggle("is-on", isFmtActive(cmd))); }
@@ -289,10 +355,8 @@
 
   $$(".fmt").forEach((b) => b.addEventListener("mousedown", (e) => {
     e.preventDefault(); const cmd = b.dataset.cmd;
-    if (cmd === "link") {
-      const sel = window.getSelection(); savedRange = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-      $("#link-input").value = ""; $("#link-modal").hidden = false; setTimeout(() => $("#link-input").focus(), 30);
-    } else { $("#n-body").focus(); document.execCommand(cmd, false, null); updateFmtStates(); }
+    if (cmd === "link") { const sel = window.getSelection(); savedRange = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null; $("#link-input").value = ""; $("#link-modal").hidden = false; setTimeout(() => $("#link-input").focus(), 30); }
+    else { $("#n-body").focus(); document.execCommand(cmd, false, null); updateFmtStates(); }
   }));
   $("#link-ok").addEventListener("click", () => {
     let url = $("#link-input").value.trim(); $("#link-modal").hidden = true; if (!url) return;
@@ -306,26 +370,23 @@
   });
   $("#link-cancel").addEventListener("click", () => ($("#link-modal").hidden = true));
 
-  function resetNoteForm() { editingNoteId = null; $("#n-title").value = ""; $("#n-body").innerHTML = ""; $("#n-new").hidden = true; $("#n-delete").hidden = true; updateFmtStates(); }
+  function newNote() {
+    editingNoteId = null; $("#n-title").value = ""; $("#n-body").innerHTML = ""; $("#n-delete").hidden = true; updateFmtStates();
+    showView("note"); setTimeout(() => $("#n-title").focus(), 40);
+  }
+  function openNoteEdit(n) {
+    if (!n) return;
+    editingNoteId = n.id; $("#n-title").value = n.title || ""; $("#n-body").innerHTML = n.body_html || ""; $("#n-delete").hidden = false; updateFmtStates();
+    showView("note");
+  }
   $("#note-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const title = $("#n-title").value.trim(); const body = $("#n-body").innerHTML.trim();
-    if (!title && !body) return;
+    if (!title && !body) { showView("notes"); return; }
     await Store.saveNote({ id: editingNoteId, title, body_html: body });
-    resetNoteForm();
-    const msg = $("#note-saved"); msg.hidden = false; setTimeout(() => (msg.hidden = true), 1600);
+    editingNoteId = null; showView("notes");
   });
-  $("#n-new").addEventListener("click", resetNoteForm);
-  $("#n-delete").addEventListener("click", async () => { if (editingNoteId && confirm("Удалить заметку?")) { await Store.deleteNote(editingNoteId); resetNoteForm(); } });
-
-  function openNote(n) {
-    if (!n) return;
-    $("#note-view-title").textContent = n.title || "без названия";
-    $("#note-view-body").innerHTML = n.body_html || "";
-    $("#note-view").hidden = false;
-    $("#note-view-edit").onclick = () => { $("#note-view").hidden = true; editingNoteId = n.id; $("#n-title").value = n.title || ""; $("#n-body").innerHTML = n.body_html || ""; $("#n-new").hidden = false; $("#n-delete").hidden = false; showView("notes"); };
-  }
-  $("#note-view-close").addEventListener("click", () => ($("#note-view").hidden = true));
+  $("#n-delete").addEventListener("click", async () => { if (editingNoteId && await askConfirm("Удалить заметку?")) { await Store.deleteNote(editingNoteId); editingNoteId = null; showView("notes"); } });
 
   /* ---------- Вход / аккаунт ---------- */
   let hasStarted = false;
@@ -335,8 +396,8 @@
     const s = await Store.settings();
     taskCount = s.count || 5; slider.value = Math.min(taskCount, 9); sliderVal.value = taskCount;
     document.documentElement.setAttribute("data-theme", s.theme || "dark");
-    await fillTags(); resetTaskDefaults();
-    showView("create");
+    await fillTags(); setTaskDateLabel();
+    showView("tasks");
   }
   function showAuth() {
     $("#app").hidden = true; $("#auth").hidden = false;
@@ -345,9 +406,7 @@
     $("#auth-google").disabled = !HAS_SUPABASE;
   }
   $("#auth-close").addEventListener("click", () => { $("#auth").hidden = true; $("#app").hidden = false; });
-  $("#account-btn").addEventListener("click", async () => {
-    if (sb && Store.userId) { if (confirm("Выйти из аккаунта?")) { await sb.auth.signOut(); Store.userId = null; showAuth(); } } else showAuth();
-  });
+  $("#account-btn").addEventListener("click", async () => { if (sb && Store.userId) { if (await askConfirm("Выйти из аккаунта?")) { await sb.auth.signOut(); Store.userId = null; showAuth(); } } else showAuth(); });
 
   if (HAS_SUPABASE) {
     $("#auth-form").addEventListener("submit", async (e) => {
