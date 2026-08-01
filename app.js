@@ -14,6 +14,7 @@
   const todayStr = () => dstr(new Date());
   const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return dstr(d); };
   const fmtFull = (s) => { const [y, m, d] = (s || "").split("-"); return d ? `${d}.${m}.${y}` : ""; };
+  const fmtShort = (s) => { const [y, m, d] = (s || "").split("-"); return d ? `${d}.${m}` : ""; };
   const MONTHS = ["январь","февраль","март","апрель","май","июнь","июль","август","сентябрь","октябрь","ноябрь","декабрь"];
   const MONTHS_SHORT = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
   const WEEKDAYS = ["ВС","ПН","ВТ","СР","ЧТ","ПТ","СБ"];
@@ -40,7 +41,18 @@
   function projById(id) { return id ? projectsCache.find((p) => p.id === id) || null : null; }
   function projEmoji(p) { return (p && p.emoji) ? p.emoji : DEFAULT_EMOJI; }
   function projPillInner(p) { return `<span class="proj-emoji">${p ? projEmoji(p) : DEFAULT_EMOJI}</span><span class="proj-name">${p ? esc(p.name) : "проект"}</span>`; }
-  async function loadProjects() { projectsCache = await Store.projects(); return projectsCache; }
+  function projStatusOf(p) { return p && SMAP[p.status] ? p.status : "progress"; }
+  const projCmpNewest = (a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")) || String(b.id).localeCompare(String(a.id));
+  function orderedProjects() {
+    const byStatus = {};
+    projectsCache.forEach((p) => { const st = projStatusOf(p); (byStatus[st] = byStatus[st] || []).push(p); });
+    const out = [];
+    STATUSES.forEach((s) => { const arr = byStatus[s.key]; if (arr) { arr.sort(projCmpNewest); out.push(...arr); } });
+    return out;
+  }
+  let _projLoading = null;
+  function loadProjects() { if (_projLoading) return _projLoading; _projLoading = Promise.resolve(Store.projects()).then((l) => { projectsCache = l; _projLoading = null; return l; }, (e) => { _projLoading = null; throw e; }); return _projLoading; }
+  function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
   const BELL_BASE = `<path d="M6 8.6a6 6 0 0112 0c0 4.4 1.8 5.7 2.4 6.2.4.3.1.9-.4.9H4c-.5 0-.8-.6-.4-.9.6-.5 2.4-1.8 2.4-6.2z"/><path d="M10 19a2 2 0 004 0"/>`;
   const BELL_ON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${BELL_BASE}</svg>`;
@@ -58,7 +70,7 @@
       const d = this.read();
       d.tasks = d.tasks || [];
       d.tasks.forEach((t) => { if (!t.id) t.id = uid(); if (!t.status) t.status = t.is_done ? "done" : "progress"; if ("tag" in t) delete t.tag; });
-      if (!d.projectsV1) { d.projects = DEFAULT_PROJECTS.map((p) => ({ id: uid(), emoji: p.emoji, name: p.name })); d.projectsV1 = true; delete d.tags; delete d.tagsV2; }
+      if (!d.projectsV1) { d.projects = DEFAULT_PROJECTS.map((p) => ({ id: uid(), emoji: p.emoji, name: p.name, status: "progress" })); d.projectsV1 = true; delete d.tags; delete d.tagsV2; }
       d.projects = d.projects || [];
       d.settings = d.settings || { theme: "dark", count: 5 };
       this.write(d); return d;
@@ -74,14 +86,21 @@
       if (sb && this.userId) {
         const { data } = await sb.from("projects").select("*").eq("user_id", this.userId).order("created_at");
         if (!data || !data.length) { const created = []; for (const p of DEFAULT_PROJECTS) { const row = await this.addProject(p); if (row) created.push(row); } return created; }
-        return data;
+        // авто-дедуп одинаковых проектов (эмодзи+имя) — чинит дубли от прошлых гонок
+        const seen = new Set(), uniq = [], dups = [];
+        for (const p of data) { const k = (p.emoji || "") + "|" + p.name; if (seen.has(k)) dups.push(p.id); else { seen.add(k); uniq.push(p); } }
+        if (dups.length) { try { await sb.from("projects").delete().in("id", dups); } catch {} }
+        return uniq;
       }
       return Local.ensure().projects;
     },
-    async addProject({ emoji, name }) {
-      if (sb && this.userId) { const { data } = await sb.from("projects").insert({ emoji: emoji || null, name, user_id: this.userId }).select().single(); return data; }
-      const d = Local.ensure(); const row = { id: uid(), emoji: emoji || "", name }; d.projects.push(row); Local.write(d); return row;
+    async addProject({ emoji, name, status, start_date, end_date, description }) {
+      const base = { emoji: emoji || null, name: name || "", status: status || "progress", start_date: start_date || null, end_date: end_date || null, description: description || null };
+      if (sb && this.userId) { const { data } = await sb.from("projects").insert({ ...base, user_id: this.userId }).select().single(); return data; }
+      const d = Local.ensure(); const row = { id: uid(), created_at: new Date().toISOString(), ...base, emoji: emoji || "" }; d.projects.push(row); Local.write(d); return row;
     },
+    async updateProject(id, fields) { if (sb && this.userId) { await sb.from("projects").update(fields).eq("id", id); return; } const d = Local.ensure(); const p = d.projects.find((x) => x.id === id); if (p) Object.assign(p, fields); Local.write(d); },
+    async deleteProject(id) { if (sb && this.userId) { await sb.from("tasks").update({ project_id: null }).eq("project_id", id); await sb.from("projects").delete().eq("id", id); return; } const d = Local.ensure(); d.tasks.forEach((t) => { if (t.project_id === id) t.project_id = null; }); d.projects = d.projects.filter((x) => x.id !== id); Local.write(d); },
     async settings() { if (sb && this.userId) { const { data } = await sb.from("settings").select("*").eq("user_id", this.userId).single(); return data || { theme: "dark", count: 5 }; } return Local.ensure().settings; },
     async saveSettings(s) { if (sb && this.userId) { await sb.from("settings").upsert({ user_id: this.userId, ...s }); return; } const d = Local.ensure(); d.settings = { ...d.settings, ...s }; Local.write(d); },
   };
@@ -175,8 +194,9 @@
   }
   function renderProjectList() {
     const q = ($("#project-search").value || "").trim().toLowerCase();
-    const list = q ? projectsCache.filter((p) => (p.name || "").toLowerCase().includes(q)) : projectsCache;
-    let html = `<button type="button" class="proj-add-row" id="proj-add-row" aria-label="Новый проект">+</button>`;
+    const ordered = orderedProjects();
+    const list = q ? ordered.filter((p) => (p.name || "").toLowerCase().includes(q)) : ordered;
+    let html = `<button type="button" class="proj-add-row" id="proj-add-row" aria-label="Новый проект"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 6.5v11M6.5 12h11"/></svg></button>`;
     html += list.map((p) => { const sel = projMode === "filter" ? filterProjects.has(p.id) : p.id === projCurrent; return `<button type="button" class="proj-pill ${sel ? (projMode === "filter" ? "is-on" : "is-cur") : ""}" data-id="${p.id}"><span class="proj-emoji">${projEmoji(p)}</span><span class="proj-name">${esc(p.name)}</span></button>`; }).join("");
     if (!list.length && q) html += `<span class="empty">ничего не найдено</span>`;
     $("#project-list").innerHTML = html;
@@ -191,10 +211,24 @@
   $("#project-reset").addEventListener("click", () => { filterProjects.clear(); applyFiltersUI(); saveFilters(); renderProjectList(); renderTasks(); });
   $("#project-modal").addEventListener("click", (e) => { if (e.target.id === "project-modal") $("#project-modal").hidden = true; });
 
-  function openProjForm() { $("#projform-emoji").value = ""; $("#projform-name").value = ""; $("#projform-modal").hidden = false; setTimeout(() => $("#projform-name").focus(), 30); }
+  /* Эмодзи-пикер */
+  const EMOJIS = ["🧶","🔨","💼","🏠","📚","✏️","💻","📱","🎯","⭐","🔥","💡","📌","✅","🗓️","⏰","🎨","🎵","🏃","🍳","🛒","💰","❤️","🧠","🌱","☕","✈️","🚗","🏋️","🎮","📷","🎁","🌍","🐶","🐱","🌟","⚡","🌈","🍎","💊","🩺","🎓","🏢","🛠️","📝","📞","💬","🔒","🔑","🧹","🍽️","🛁","👶","🐾","🎂","🎉","💍","💐","📦","🚚","🧾","💳","📈","📉","🎬","🎤","🏦","⚙️","🔧","🖥️","🗂️","📁","🔬","🧪","🌿","🪴","🐟","🍞","🥦","🏊","🚴","🧘","😀","😎","🤝","👍","🙏","🔔","📖","✒️"];
+  let formEmoji = "", emojiOnPick = null;
+  function renderFormEmoji() { $("#projform-emoji").textContent = formEmoji || DEFAULT_EMOJI; $("#projform-emoji").classList.toggle("is-empty", !formEmoji); }
+  function openEmojiModal(current, onPick) {
+    emojiOnPick = onPick; $("#emoji-input").value = "";
+    $("#emoji-grid").innerHTML = EMOJIS.map((e) => `<button type="button" class="emoji-cell ${e === current ? "is-cur" : ""}" data-e="${e}">${e}</button>`).join("");
+    $$("#emoji-grid .emoji-cell").forEach((b) => b.addEventListener("click", () => { $("#emoji-modal").hidden = true; if (emojiOnPick) emojiOnPick(b.dataset.e); }));
+    $("#emoji-modal").hidden = false;
+  }
+  $("#emoji-input").addEventListener("input", (e) => { const v = [...(e.target.value || "").trim()]; if (v.length) { const em = v[v.length - 1]; $("#emoji-modal").hidden = true; if (emojiOnPick) emojiOnPick(em); } });
+  $("#emoji-modal").addEventListener("click", (e) => { if (e.target.id === "emoji-modal") $("#emoji-modal").hidden = true; });
+  $("#projform-emoji").addEventListener("click", () => openEmojiModal(formEmoji, (em) => { formEmoji = em; renderFormEmoji(); }));
+
+  function openProjForm() { formEmoji = ""; renderFormEmoji(); $("#projform-name").value = ""; $("#projform-modal").hidden = false; setTimeout(() => $("#projform-name").focus(), 30); }
   $("#projform-ok").addEventListener("click", async () => {
     const name = ($("#projform-name").value || "").trim(); if (!name) { $("#projform-name").focus(); return; }
-    const emoji = ($("#projform-emoji").value || "").trim();
+    const emoji = formEmoji;
     const row = await Store.addProject({ emoji, name }); await loadProjects();
     $("#projform-modal").hidden = true;
     if (projMode === "single" && row) { $("#project-modal").hidden = true; if (projOnPick) projOnPick(row.id); }
@@ -231,17 +265,18 @@
     blk.innerHTML = `<span class="chk-box" contenteditable="false"></span><span class="chk-text"></span>`;
     blk.querySelector(".chk-text").textContent = rest || "";
   }
+  const CHK_TRIG = /^\[\]\s/;
   function maybeMakeChecklist(el) {
     const sel = window.getSelection(); if (!sel.rangeCount) return;
     const blk = currentBlock(el);
     if (blk) {
       if (blk.classList.contains("chk")) return;
       const txt = blk.textContent;
-      if (txt.startsWith("[]")) { makeChk(blk, txt.slice(2), false); placeCaretInText(blk.querySelector(".chk-text"), (txt.slice(2)).length); }
+      if (CHK_TRIG.test(txt)) { const rest = txt.replace(CHK_TRIG, ""); makeChk(blk, rest, false); placeCaretInText(blk.querySelector(".chk-text"), rest.length); }
     } else {
       const node = sel.anchorNode;
-      if (node && node.nodeType === 3 && node.parentNode === el && node.textContent.startsWith("[]")) {
-        const div = document.createElement("div"); el.insertBefore(div, node); const rest = node.textContent.slice(2); node.remove();
+      if (node && node.nodeType === 3 && node.parentNode === el && CHK_TRIG.test(node.textContent)) {
+        const div = document.createElement("div"); el.insertBefore(div, node); const rest = node.textContent.replace(CHK_TRIG, ""); node.remove();
         makeChk(div, rest, false); placeCaretInText(div.querySelector(".chk-text"), rest.length);
       }
     }
@@ -274,14 +309,24 @@
   function showView(name) {
     currentView = name;
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
-    const sub = name === "task";
-    $("#back-btn").hidden = !sub; $("#page-title").hidden = sub; $("#fab").hidden = sub;
+    const isForm = name === "task" || name === "project";
+    $("#back-btn").hidden = !isForm;
+    $("#page-nav").hidden = isForm;
+    $("#fab").hidden = !(name === "tasks" || name === "projects");
+    if (!isForm) $$("#page-nav .nav-item").forEach((b) => { const on = b.dataset.view === name; b.classList.toggle("active", on); if (on) b.scrollIntoView({ inline: "nearest", block: "nearest" }); });
     if (name === "tasks") renderTasks();
+    else if (name === "projects") renderKanban();
+    else if (name === "project") renderProjectTasks();
   }
-  function goBack() { const m = $$(".modal").find((x) => !x.hidden); if (m) { m.hidden = true; return; } if (currentView === "task") showView("tasks"); }
+  $$("#page-nav .nav-item").forEach((b) => b.addEventListener("click", () => { if (currentView !== b.dataset.view) showView(b.dataset.view); }));
+  function goBack() {
+    const m = $$(".modal").find((x) => !x.hidden); if (m) { m.hidden = true; return; }
+    if (currentView === "task") { leaveTask(); return; }
+    if (currentView === "project") { leaveProject(); return; }
+  }
   $("#back-btn").addEventListener("click", goBack);
   $("#brand-home").addEventListener("click", () => showView("tasks"));
-  $("#fab").addEventListener("click", () => newTask());
+  $("#fab").addEventListener("click", () => { if (currentView === "projects") newProject(); else newTask(); });
   (function () { const main = $(".main"); let sx = 0, sy = 0, on = false;
     main.addEventListener("touchstart", (e) => { if (e.touches.length !== 1 || e.target.closest(".swipe-row") || e.target.closest("[contenteditable]")) { on = false; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true });
     main.addEventListener("touchmove", (e) => { if (!on) return; if (Math.abs(e.touches[0].clientY - sy) > Math.abs(e.touches[0].clientX - sx)) on = false; }, { passive: true });
@@ -304,42 +349,76 @@
 
   /* ---------- Список задач ---------- */
   function dayHead(day) { if (!day) return "без даты"; const [y, m, d] = day.split("-").map(Number); return `${WEEKDAYS[new Date(y, m - 1, d).getDay()]} · ${d} ${MONTHS_SHORT[m - 1]}`; }
-  function taskRow(t) {
+  function taskRow(t, opts) {
+    opts = opts || {};
     const st = statusOf(t); const p = projById(t.project_id);
+    const projCell = opts.showProjectPill ? `<span class="proj-pill task-proj ${p ? "" : "is-empty"}" data-act="project">${projPillInner(p)}</span>` : "";
+    const dateCell = opts.showDate ? `<button class="task-date" data-act="time">${t.due_date ? fmtShort(t.due_date) : "—"}</button>` : "";
     return `<div class="task swipeable" data-id="${t.id}">
       <div class="swipe-del">${TRASH_SVG}</div>
       <div class="swipe-row">
         <button class="row-status" data-act="status" aria-label="Статус">${statusDot(st, true)}</button>
         <span class="task-title">${esc(t.title)}</span>
-        <span class="proj-pill task-proj ${p ? "" : "is-empty"}" data-act="project">${projPillInner(p)}</span>
+        ${projCell}${dateCell}
         <button class="task-time" data-act="time">${t.due_time ? esc(t.due_time) : "—"}</button>
       </div>
     </div>`;
   }
+  const taskSort = (a, b) => (a.due_date || "9999").localeCompare(b.due_date || "9999") || (a.due_time || "99:99").localeCompare(b.due_time || "99:99");
+  function buildGroupedTaskListHTML(tasks, opts) {
+    let html = "", lastDay = null;
+    tasks.forEach((t) => { const day = t.due_date ? t.due_date.slice(0, 10) : ""; if (day !== lastDay) { if (lastDay !== null) html += "</div></div>"; html += `<div class="day-group"><div class="day-head">${dayHead(day)}</div><div class="day-tasks">`; lastDay = day; } html += taskRow(t, opts); });
+    if (lastDay !== null) html += "</div></div>";
+    return html;
+  }
+  function buildFlatTaskListHTML(tasks, opts) { return `<div class="day-tasks">${tasks.map((t) => taskRow(t, opts)).join("")}</div>`; }
   async function renderTasks() {
     let tasks = await Store.tasks();
     tasks = tasks.filter((t) => filterStatuses.has(statusOf(t)));
     if (dateFilter) tasks = tasks.filter((t) => (t.due_date || "").slice(0, 10) === dateFilter);
     if (filterProjects.size) tasks = tasks.filter((t) => filterProjects.has(t.project_id));
-    tasks.sort((a, b) => (a.due_date || "9999").localeCompare(b.due_date || "9999") || (a.due_time || "99:99").localeCompare(b.due_time || "99:99"));
+    tasks.sort(taskSort);
     const shown = tasks.slice(0, taskCount);
     tasksById = {}; shown.forEach((t) => (tasksById[t.id] = t));
     $("#tasks-empty").hidden = shown.length > 0;
-    let html = "", lastDay = null;
-    shown.forEach((t) => { const day = t.due_date ? t.due_date.slice(0, 10) : ""; if (day !== lastDay) { if (lastDay !== null) html += "</div></div>"; html += `<div class="day-group"><div class="day-head">${dayHead(day)}</div><div class="day-tasks">`; lastDay = day; } html += taskRow(t); });
-    if (lastDay !== null) html += "</div></div>";
-    $("#task-list").innerHTML = html;
+    $("#task-list").innerHTML = buildGroupedTaskListHTML(shown, { showProjectPill: true });
     $$("#task-list .task").forEach((el) => attachSwipe(el, async () => { await Store.deleteTask(el.dataset.id); renderTasks(); }));
   }
-  $("#task-list").addEventListener("click", (e) => {
-    if (justSwiped) return;
-    const el = e.target.closest(".task"); if (!el) return; const t = tasksById[el.dataset.id]; if (!t) return;
-    const hit = e.target.closest("[data-act]"); const act = hit ? hit.dataset.act : null;
-    if (act === "status") { openStatusPicker(statusOf(t), async (k) => { await Store.updateTask(t.id, { status: k, is_done: k === "done" }); renderTasks(); }); return; }
-    if (act === "project") { openProjectPicker(t.project_id || null, async (id) => { await Store.updateTask(t.id, { project_id: id }); renderTasks(); }); return; }
-    if (act === "time") { openDateTime({ date: t.due_date, time: t.due_time, notify: t.notify !== false, onDone: async (date, time, notify) => { await updateTaskDateTime(t.id, date, time, notify); renderTasks(); } }); return; }
-    openTaskEdit(t);
-  });
+  let projTasksById = {}, pFilterStatuses = new Set(DEFAULT_STATUSES), pDateFilter = "";
+  async function renderProjectTasks() {
+    if (!editingProjectId) { projTasksById = {}; $("#p-task-list").innerHTML = ""; $("#p-tasks-empty").hidden = true; return; }
+    let tasks = await Store.tasks();
+    tasks = tasks.filter((t) => t.project_id === editingProjectId && pFilterStatuses.has(statusOf(t)));
+    if (pDateFilter) tasks = tasks.filter((t) => (t.due_date || "").slice(0, 10) === pDateFilter);
+    tasks.sort(taskSort);
+    projTasksById = {}; tasks.forEach((t) => (projTasksById[t.id] = t));
+    $("#p-tasks-empty").hidden = tasks.length > 0;
+    $("#p-task-list").innerHTML = buildFlatTaskListHTML(tasks, { showDate: true });
+    $$("#p-task-list .task").forEach((el) => attachSwipe(el, async () => { await Store.deleteTask(el.dataset.id); renderProjectTasks(); }));
+  }
+  function isDefaultStatusSet(set) { return set.size === DEFAULT_STATUSES.length && DEFAULT_STATUSES.every((k) => set.has(k)); }
+  function applyProjFiltersUI() {
+    $("#p-date-filter-label").textContent = pDateFilter ? fmtFull(pDateFilter) : "все дни";
+    $("#p-date-filter").classList.toggle("is-set", !!pDateFilter);
+    $("#p-date-clear").hidden = !pDateFilter;
+    $("#p-status-filter").classList.toggle("is-on", !isDefaultStatusSet(pFilterStatuses));
+  }
+  $("#p-date-filter").addEventListener("click", () => openCalendar({ value: pDateFilter, allowAll: true, onPick: (v) => { pDateFilter = v; applyProjFiltersUI(); renderProjectTasks(); } }));
+  $("#p-date-clear").addEventListener("click", () => { pDateFilter = ""; applyProjFiltersUI(); renderProjectTasks(); });
+  $("#p-status-filter").addEventListener("click", () => openStatusFilterModal(pFilterStatuses, () => { applyProjFiltersUI(); renderProjectTasks(); }));
+  function taskListClick(getMap, onChange, returnView) {
+    return (e) => {
+      if (justSwiped) return;
+      const el = e.target.closest(".task"); if (!el) return; const t = getMap()[el.dataset.id]; if (!t) return;
+      const hit = e.target.closest("[data-act]"); const act = hit ? hit.dataset.act : null;
+      if (act === "status") { openStatusPicker(statusOf(t), async (k) => { await Store.updateTask(t.id, { status: k, is_done: k === "done" }); onChange(); }); return; }
+      if (act === "project") { openProjectPicker(t.project_id || null, async (id) => { await Store.updateTask(t.id, { project_id: id }); onChange(); }); return; }
+      if (act === "time") { openDateTime({ date: t.due_date, time: t.due_time, notify: t.notify !== false, onDone: async (date, time, notify) => { await updateTaskDateTime(t.id, date, time, notify); onChange(); } }); return; }
+      openTaskEdit(t, returnView);
+    };
+  }
+  $("#task-list").addEventListener("click", taskListClick(() => tasksById, renderTasks, "tasks"));
+  $("#p-task-list").addEventListener("click", taskListClick(() => projTasksById, renderProjectTasks, "project"));
   async function updateTaskDateTime(id, date, time, notify) { let remind_at = null; if (notify && date && time) { const d = new Date(`${date}T${time}:00`); if (!isNaN(d)) remind_at = d.toISOString(); } await Store.updateTask(id, { due_date: date || null, due_time: time || null, notify, remind_at, notified: false }); }
 
   /* фильтры-кнопки */
@@ -347,11 +426,13 @@
   $("#date-clear").addEventListener("click", () => { dateFilter = ""; applyFiltersUI(); saveFilters(); renderTasks(); });
   $("#project-filter").addEventListener("click", openProjectFilter);
 
-  function renderStatusFilter() {
-    $("#statusfilter-list").innerHTML = STATUSES.map((s) => `<button type="button" class="status-pill ${filterStatuses.has(s.key) ? "" : "off"}" data-k="${s.key}" style="--c:${s.c}"><span>${s.name}</span>${statusDot(s.key)}</button>`).join("");
-    $$("#statusfilter-list .status-pill").forEach((b) => b.addEventListener("click", () => { const k = b.dataset.k; filterStatuses.has(k) ? filterStatuses.delete(k) : filterStatuses.add(k); applyFiltersUI(); saveFilters(); renderStatusFilter(); renderTasks(); }));
+  let sfSet = null, sfOnChange = null;
+  function renderStatusFilterList() {
+    $("#statusfilter-list").innerHTML = STATUSES.map((s) => `<button type="button" class="status-pill ${sfSet && sfSet.has(s.key) ? "" : "off"}" data-k="${s.key}" style="--c:${s.c}"><span>${s.name}</span>${statusDot(s.key)}</button>`).join("");
+    $$("#statusfilter-list .status-pill").forEach((b) => b.addEventListener("click", () => { const k = b.dataset.k; sfSet.has(k) ? sfSet.delete(k) : sfSet.add(k); renderStatusFilterList(); if (sfOnChange) sfOnChange(); }));
   }
-  $("#status-filter").addEventListener("click", () => { renderStatusFilter(); $("#statusfilter-modal").hidden = false; });
+  function openStatusFilterModal(set, onChange) { sfSet = set; sfOnChange = onChange; renderStatusFilterList(); $("#statusfilter-modal").hidden = false; }
+  $("#status-filter").addEventListener("click", () => openStatusFilterModal(filterStatuses, () => { applyFiltersUI(); saveFilters(); renderTasks(); }));
   $("#statusfilter-modal").addEventListener("click", (e) => { if (e.target.id === "statusfilter-modal") $("#statusfilter-modal").hidden = true; });
 
   /* ползунок */
@@ -361,8 +442,8 @@
   sliderVal.addEventListener("change", () => { let v = parseInt(sliderVal.value, 10); if (!v || v < 1) v = 1; taskCount = v; slider.value = Math.min(v, 9); sliderVal.value = v; Store.saveSettings({ count: v }); renderTasks(); });
   sliderVal.addEventListener("focus", () => sliderVal.select());
 
-  /* ---------- КАРТОЧКА задачи ---------- */
-  let editingTaskId = null, cardDate = tomorrowStr(), cardTime = "12:00", cardNotify = true, cardStatus = "progress", cardProjectId = null;
+  /* ---------- КАРТОЧКА задачи (автосохранение) ---------- */
+  let editingTaskId = null, cardDate = tomorrowStr(), cardTime = "12:00", cardNotify = true, cardStatus = "progress", cardProjectId = null, taskTouched = false, editReturn = "tasks";
   function renderCardMeta() {
     $("#t-date").textContent = cardDate ? fmtFull(cardDate) : "дата";
     $("#t-time").value = cardTime || "";
@@ -371,33 +452,124 @@
     const p = projById(cardProjectId);
     $("#t-project").innerHTML = projPillInner(p); $("#t-project").classList.toggle("is-empty", !p);
   }
-  $("#t-date").addEventListener("click", () => openCalendar({ value: cardDate, onPick: (v) => { cardDate = v; renderCardMeta(); } }));
-  $("#t-time").addEventListener("input", (e) => { cardTime = e.target.value; });
-  $("#t-notify").addEventListener("click", () => { cardNotify = !cardNotify; renderCardMeta(); });
-  $("#t-status").addEventListener("click", () => openStatusPicker(cardStatus, (k) => { cardStatus = k; renderCardMeta(); }));
-  $("#t-project").addEventListener("click", () => openProjectPicker(cardProjectId, (id) => { cardProjectId = id; renderCardMeta(); }));
+  function taskFields() {
+    let remind_at = null; if (cardNotify && cardDate && cardTime) { const d = new Date(`${cardDate}T${cardTime}:00`); if (!isNaN(d)) remind_at = d.toISOString(); }
+    return { title: $("#t-title").textContent.trim(), description: descToText($("#t-desc")), due_date: cardDate || null, due_time: cardTime || null, notify: cardNotify, project_id: cardProjectId || null, status: cardStatus, is_done: cardStatus === "done", remind_at, notified: false };
+  }
+  async function saveTaskDraft() { if (editingTaskId) await Store.updateTask(editingTaskId, taskFields()); }
+  const saveTaskDebounced = debounce(saveTaskDraft, 400);
+  $("#t-date").addEventListener("click", () => openCalendar({ value: cardDate, onPick: (v) => { cardDate = v; taskTouched = true; renderCardMeta(); saveTaskDraft(); } }));
+  $("#t-time").addEventListener("input", (e) => { cardTime = e.target.value; taskTouched = true; saveTaskDraft(); });
+  $("#t-notify").addEventListener("click", () => { cardNotify = !cardNotify; taskTouched = true; renderCardMeta(); saveTaskDraft(); });
+  $("#t-status").addEventListener("click", () => openStatusPicker(cardStatus, (k) => { cardStatus = k; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
+  $("#t-project").addEventListener("click", () => openProjectPicker(cardProjectId, (id) => { cardProjectId = id; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
+  $("#t-title").addEventListener("input", () => { taskTouched = true; saveTaskDebounced(); });
+  $("#t-desc").addEventListener("input", () => { taskTouched = true; saveTaskDebounced(); });
   initChecklist($("#t-desc"));
 
-  function newTask() {
-    editingTaskId = null; cardDate = tomorrowStr(); cardTime = "12:00"; cardNotify = true; cardStatus = "progress"; cardProjectId = null;
+  async function newTask(opts) {
+    opts = opts || {};
+    cardDate = tomorrowStr(); cardTime = "12:00"; cardNotify = true; cardStatus = "progress"; cardProjectId = opts.projectId || null; taskTouched = false; editReturn = opts.returnView || "tasks";
     $("#t-title").innerText = ""; $("#t-desc").innerHTML = ""; renderCardMeta();
-    $("#t-submit").textContent = "Добавить"; $("#t-delete").hidden = true;
+    const draft = await Store.addTask(taskFields()); editingTaskId = draft.id;
+    $("#t-submit").textContent = "Готово"; $("#t-delete").hidden = false;
     showView("task"); $("#t-title").focus();
   }
-  function openTaskEdit(t) {
-    editingTaskId = t.id; cardDate = t.due_date || tomorrowStr(); cardTime = t.due_time || ""; cardNotify = t.notify !== false; cardStatus = statusOf(t); cardProjectId = t.project_id || null;
+  function openTaskEdit(t, returnView) {
+    editReturn = returnView || "tasks"; editingTaskId = t.id; cardDate = t.due_date || tomorrowStr(); cardTime = t.due_time || ""; cardNotify = t.notify !== false; cardStatus = statusOf(t); cardProjectId = t.project_id || null; taskTouched = true;
     $("#t-title").innerText = t.title || ""; textToDesc($("#t-desc"), t.description || ""); renderCardMeta();
-    $("#t-submit").textContent = "Сохранить"; $("#t-delete").hidden = false;
+    $("#t-submit").textContent = "Готово"; $("#t-delete").hidden = false;
     showView("task");
   }
-  $("#t-submit").addEventListener("click", async () => {
-    const title = $("#t-title").textContent.trim(); if (!title) { $("#t-title").focus(); return; }
-    let remind_at = null; if (cardNotify && cardDate && cardTime) { const d = new Date(`${cardDate}T${cardTime}:00`); if (!isNaN(d)) remind_at = d.toISOString(); }
-    const fields = { title, description: descToText($("#t-desc")), due_date: cardDate || null, due_time: cardTime || null, notify: cardNotify, project_id: cardProjectId || null, status: cardStatus, is_done: cardStatus === "done", remind_at, notified: false };
-    if (editingTaskId) { await Store.updateTask(editingTaskId, fields); editingTaskId = null; } else await Store.addTask(fields);
-    showView("tasks");
+  async function leaveTask() {
+    if (editingTaskId) {
+      const f = taskFields();
+      if (!taskTouched && !f.title && !f.description) { await Store.deleteTask(editingTaskId); }
+      else { if (!f.title) f.title = "Без названия"; await Store.updateTask(editingTaskId, f); }
+    }
+    editingTaskId = null;
+    showView(editReturn === "project" ? "project" : "tasks");
+  }
+  $("#t-submit").addEventListener("click", leaveTask);
+  $("#t-delete").addEventListener("click", async () => { if (editingTaskId && await askConfirm("Удалить задачу?")) { const rv = editReturn; await Store.deleteTask(editingTaskId); editingTaskId = null; showView(rv === "project" ? "project" : "tasks"); } });
+
+  /* ---------- Канбан проектов ---------- */
+  function projBadges(pid, tasks) {
+    const counts = {};
+    tasks.forEach((t) => { if (t.project_id === pid) { const s = statusOf(t); if (s !== "done") counts[s] = (counts[s] || 0) + 1; } });
+    return STATUSES.filter((s) => s.key !== "done" && counts[s.key]).map((s) => ({ c: s.c, count: counts[s.key] }));
+  }
+  function kanbanCard(p, tasks) {
+    const badges = projBadges(p.id, tasks);
+    const ds = p.start_date && p.end_date ? `${fmtFull(p.start_date)} – ${fmtFull(p.end_date)}` : p.start_date ? `с ${fmtFull(p.start_date)}` : p.end_date ? `до ${fmtFull(p.end_date)}` : "";
+    const dates = ds ? `<div class="kb-dates">${ds}</div>` : "";
+    const badgesHtml = badges.length ? `<div class="kb-badges">${badges.map((b) => `<span class="kb-badge" style="--c:${b.c}">${b.count}</span>`).join("")}</div>` : "";
+    return `<div class="kb-card" data-id="${p.id}">
+      <div class="kb-card-title"><span class="proj-emoji">${projEmoji(p)}</span><span>${esc(p.name || "Без названия")}</span></div>
+      ${dates}${badgesHtml}
+    </div>`;
+  }
+  async function renderKanban() {
+    await loadProjects();
+    const tasks = await Store.tasks();
+    const byStatus = {};
+    projectsCache.forEach((p) => { const st = projStatusOf(p); (byStatus[st] = byStatus[st] || []).push(p); });
+    Object.values(byStatus).forEach((arr) => arr.sort(projCmpNewest));
+    let html = "";
+    STATUSES.forEach((s) => { const arr = byStatus[s.key]; if (!arr || !arr.length) return; html += `<div class="kb-col"><div class="kb-col-head">${statusDot(s.key)}<span>${s.name}</span></div><div class="kb-cards scroll">${arr.map((p) => kanbanCard(p, tasks)).join("")}</div></div>`; });
+    $("#kanban").innerHTML = html || `<p class="empty kb-empty">нет проектов — создай первый по +</p>`;
+  }
+  $("#kanban").addEventListener("click", (e) => {
+    const card = e.target.closest(".kb-card"); if (!card) return; const p = projById(card.dataset.id); if (!p) return;
+    openProjectEdit(p);
   });
-  $("#t-delete").addEventListener("click", async () => { if (editingTaskId && await askConfirm("Удалить задачу?")) { await Store.deleteTask(editingTaskId); editingTaskId = null; showView("tasks"); } });
+
+  /* ---------- КАРТОЧКА проекта (автосохранение) ---------- */
+  let editingProjectId = null, pEmoji = "", pStatus = "progress", pStart = null, pEnd = null, projTouched = false;
+  function renderProjectMeta() {
+    $("#p-emoji").textContent = pEmoji || DEFAULT_EMOJI; $("#p-emoji").classList.toggle("is-empty", !pEmoji);
+    $("#p-status").innerHTML = statusPill(pStatus);
+    $("#p-start").textContent = pStart ? fmtFull(pStart) : "дата начала"; $("#p-start").classList.toggle("is-empty", !pStart);
+    $("#p-end").textContent = pEnd ? fmtFull(pEnd) : "дата окончания"; $("#p-end").classList.toggle("is-empty", !pEnd);
+  }
+  function projectFields() { return { name: $("#p-title").textContent.trim(), emoji: pEmoji || null, status: pStatus, start_date: pStart || null, end_date: pEnd || null, description: descToText($("#p-desc")) }; }
+  async function saveProjectDraft() { if (!editingProjectId) return; const f = projectFields(); await Store.updateProject(editingProjectId, f); const i = projectsCache.findIndex((p) => p.id === editingProjectId); if (i >= 0) projectsCache[i] = { ...projectsCache[i], ...f }; }
+  const saveProjectDebounced = debounce(saveProjectDraft, 400);
+  $("#p-emoji").addEventListener("click", () => openEmojiModal(pEmoji, (em) => { pEmoji = em; projTouched = true; renderProjectMeta(); saveProjectDraft(); }));
+  $("#p-status").addEventListener("click", () => openStatusPicker(pStatus, (k) => { pStatus = k; projTouched = true; renderProjectMeta(); saveProjectDraft(); }));
+  $("#p-start").addEventListener("click", () => openCalendar({ value: pStart || todayStr(), onPick: (v) => { pStart = v; projTouched = true; renderProjectMeta(); saveProjectDraft(); } }));
+  $("#p-end").addEventListener("click", () => openCalendar({ value: pEnd || todayStr(), onPick: (v) => { pEnd = v; projTouched = true; renderProjectMeta(); saveProjectDraft(); } }));
+  $("#p-title").addEventListener("input", () => { projTouched = true; saveProjectDebounced(); });
+  $("#p-desc").addEventListener("input", () => { projTouched = true; saveProjectDebounced(); });
+  initChecklist($("#p-desc"));
+  $("#p-add-task").addEventListener("click", () => newTask({ projectId: editingProjectId, returnView: "project" }));
+  async function newProject() {
+    pEmoji = ""; pStatus = "progress"; pStart = null; pEnd = null; projTouched = false;
+    $("#p-title").innerText = ""; $("#p-desc").innerHTML = ""; renderProjectMeta();
+    const draft = await Store.addProject(projectFields()); editingProjectId = draft.id;
+    if (!projectsCache.some((p) => p.id === draft.id)) projectsCache.push(draft);
+    $("#p-submit").textContent = "Готово"; $("#p-delete").hidden = false;
+    pFilterStatuses = new Set(DEFAULT_STATUSES); pDateFilter = ""; applyProjFiltersUI();
+    renderProjectTasks(); showView("project"); $("#p-title").focus();
+  }
+  function openProjectEdit(p) {
+    editingProjectId = p.id; pEmoji = p.emoji || ""; pStatus = projStatusOf(p); pStart = p.start_date || null; pEnd = p.end_date || null; projTouched = true;
+    $("#p-title").innerText = p.name || ""; textToDesc($("#p-desc"), p.description || ""); renderProjectMeta();
+    $("#p-submit").textContent = "Готово"; $("#p-delete").hidden = false;
+    pFilterStatuses = new Set(DEFAULT_STATUSES); pDateFilter = ""; applyProjFiltersUI();
+    renderProjectTasks(); showView("project");
+  }
+  async function leaveProject() {
+    if (editingProjectId) {
+      const f = projectFields(); const tasks = await Store.tasks(); const hasTasks = tasks.some((t) => t.project_id === editingProjectId);
+      if (!projTouched && !f.name && !f.description && !hasTasks) { await Store.deleteProject(editingProjectId); }
+      else { if (!f.name) f.name = "Без названия"; await Store.updateProject(editingProjectId, f); }
+      editingProjectId = null; await loadProjects();
+    }
+    showView("projects");
+  }
+  $("#p-submit").addEventListener("click", leaveProject);
+  $("#p-delete").addEventListener("click", async () => { if (editingProjectId && await askConfirm("Удалить проект?")) { await Store.deleteProject(editingProjectId); editingProjectId = null; await loadProjects(); showView("projects"); } });
 
   /* ---------- Аккаунт ---------- */
   $("#account-btn").addEventListener("click", async () => {
@@ -406,7 +578,7 @@
     let email = ""; try { const { data } = await sb.auth.getUser(); email = data && data.user && data.user.email; } catch {}
     $("#account-email").textContent = email || "аккаунт"; updateNotifBtn(); pop.hidden = false;
   });
-  $("#account-signout").addEventListener("click", async () => { $("#account-pop").hidden = true; if (sb) await sb.auth.signOut(); Store.userId = null; showAuth(); });
+  $("#account-signout").addEventListener("click", async () => { $("#account-pop").hidden = true; if (sb) await sb.auth.signOut(); Store.userId = null; hasStarted = false; projectsCache = []; _projLoading = null; showAuth(); });
   document.addEventListener("click", (e) => { if (!$("#account-pop").hidden && !e.target.closest("#account-pop") && !e.target.closest("#account-btn")) $("#account-pop").hidden = true; });
 
   /* ---------- Пуш-уведомления ---------- */
@@ -436,7 +608,9 @@
     if (m.includes("failed to fetch") || m.includes("network")) return "Нет связи с сервером";
     return "Не получилось. Проверьте данные и попробуйте снова";
   }
+  let hasStarted = false;
   async function startApp() {
+    if (hasStarted) return; hasStarted = true;
     $("#auth").hidden = true; $("#app").hidden = false;
     const s = await Store.settings();
     taskCount = s.count || 5; slider.value = Math.min(taskCount, 9); sliderVal.value = taskCount;

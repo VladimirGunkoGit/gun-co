@@ -65,8 +65,44 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .proj-add-row{ display:inline-flex; align-items:center; justify-content:center; align-self:flex-start; border:none; background:var(--inactive-bg); color:var(--fg); border-radius:5px; padding:4px 14px; font-size:17px; line-height:1; min-width:40px; }
 /* форма создания проекта */
 .projform{ display:flex; gap:10px; align-items:stretch; }
-.projform-emoji{ width:54px; flex:none; text-align:center; font-size:22px; background:var(--field-bg); border:none; border-radius:13px; outline:none; padding:10px 0; }
+.projform-emoji{ width:54px; flex:none; display:inline-flex; align-items:center; justify-content:center; font-size:24px; line-height:1; background:var(--field-bg); border:none; border-radius:13px; outline:none; cursor:pointer; }
+.projform-emoji.is-empty{ opacity:.5; }
 .projform .field{ flex:1; }
+/* Эмодзи-пикер */
+.emoji-card{ max-width:360px; }
+.emoji-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; max-height:44vh; overflow-y:auto; padding:2px; }
+.emoji-cell{ aspect-ratio:1; border:none; background:transparent; border-radius:10px; font-size:22px; line-height:1; display:flex; align-items:center; justify-content:center; }
+.emoji-cell:active{ background:var(--inactive-bg); }
+.emoji-cell.is-cur{ background:var(--inactive-bg); box-shadow:inset 0 0 0 1.5px var(--fg); }
+
+/* Канбан проектов */
+.kanban{ display:flex; align-items:flex-start; gap:14px; height:100%; overflow-x:auto; overflow-y:hidden; padding:0 18px 12px; -webkit-overflow-scrolling:touch; }
+.kanban::-webkit-scrollbar{ height:6px; }
+.kanban::-webkit-scrollbar-thumb{ background:var(--scroll); border-radius:3px; }
+.kb-col{ flex:0 0 190px; width:190px; max-height:100%; display:flex; flex-direction:column; min-height:0; }
+.kb-col-head{ display:flex; align-items:center; gap:8px; font-size:var(--fs-body); color:var(--text-soft); text-transform:lowercase; padding:0 2px 10px; flex:none; }
+.kb-cards{ display:flex; flex-direction:column; gap:8px; overflow-y:auto; min-height:0; padding-bottom:6px; }
+.kb-card{ position:relative; background:var(--inactive-bg); border-radius:5px; padding:11px 12px; cursor:pointer; display:flex; flex-direction:column; gap:8px; }
+.kb-card-title{ display:flex; align-items:center; gap:7px; font-size:14px; font-weight:500; word-break:break-word; }
+.kb-card-title .proj-emoji{ font-size:15px; line-height:1; }
+.kb-status{ align-self:flex-start; }
+.kb-dates{ font-size:11px; color:var(--muted); }
+.kb-badges{ display:flex; flex-wrap:wrap; gap:4px; justify-content:flex-start; margin-top:2px; }
+.kb-badge{ min-width:22px; height:22px; padding:0 6px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; background:rgba(var(--c), .22); color:rgb(var(--c)); }
+.kb-empty{ padding:24px 18px; }
+
+/* Карточка проекта */
+.proj-head{ display:flex; align-items:center; gap:10px; }
+.proj-head .taskcard-title{ flex:1; min-width:0; }
+.proj-emoji-btn{ flex:none; background:transparent; border:none; cursor:pointer; font-size:25px; line-height:1; padding:0; }
+.proj-emoji-btn.is-empty{ opacity:.55; }
+.meta-pill.is-empty{ color:var(--muted); }
+.proj-tasks{ margin-top:33px; }
+.proj-tasks-head{ font-weight:600; font-size:15px; margin-bottom:10px; }
+.proj-add-task{ background:var(--inactive-bg); border:none; border-radius:5px; padding:6px 12px; font-size:var(--fs-body); color:var(--text-soft); margin-top:12px; }
+#p-task-list{ overflow:visible; flex:none; padding:0; }
+#p-desc{ margin-top:40px; }
+.task-date{ flex:none; min-width:42px; text-align:right; color:var(--muted); font-size:var(--fs-body); white-space:nowrap; background:transparent; border:none; padding:0; }
 
 /* СТАТУСЫ — пилюля (имя + светящаяся точка справа) */
 .status-pill{ display:inline-flex; align-items:center; gap:8px; border:none; border-radius:5px; padding:3px 10px; font-size:var(--fs-body); line-height:1.15; white-space:nowrap; background:rgba(var(--c), .24); color:var(--fg); }
@@ -101,8 +137,12 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .app{ height:100%; display:flex; flex-direction:column; padding-left:var(--safe-left); padding-right:var(--safe-right); }
 .topbar{ display:flex; align-items:center; justify-content:space-between; padding:calc(var(--safe-top) + 12px) 18px 6px; flex:none; }
 .topbar-actions{ display:flex; gap:0; }
-.subhead{ display:flex; align-items:center; gap:6px; padding:2px 18px 24px; flex:none; min-height:44px; }
-.page-title{ font-family:var(--font-title); font-size:calc(var(--fs-title) * 1.5); font-weight:600; text-transform:lowercase; letter-spacing:.01em; }
+.subhead{ display:flex; align-items:flex-end; gap:6px; padding:16px 18px 10px; flex:none; min-height:44px; }
+/* Навигация по страницам */
+.page-nav{ display:flex; align-items:flex-end; gap:16px; flex:1; min-width:0; min-height:calc(var(--fs-title) * 1.5 * 1.25); overflow-x:auto; overflow-y:hidden; padding-right:28px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+.page-nav::-webkit-scrollbar{ display:none; }
+.nav-item{ flex:none; background:transparent; border:none; padding:0; cursor:pointer; font-family:var(--font-title); font-weight:600; text-transform:lowercase; letter-spacing:.01em; color:var(--fg); white-space:nowrap; font-size:calc(var(--fs-title) * 1.5 * .66); opacity:.5; transition:font-size .28s ease, opacity .28s ease; }
+.nav-item.active{ font-size:calc(var(--fs-title) * 1.5); opacity:1; cursor:default; }
 .back-btn{ background:transparent; border:none; color:var(--fg); font-size:30px; line-height:1; width:34px; height:34px; margin-left:-6px; display:flex; align-items:center; justify-content:center; }
 .main{ flex:1; min-height:0; position:relative; }
 .view{ position:absolute; inset:0; display:flex; flex-direction:column; overflow:hidden; }
@@ -162,7 +202,7 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .form{ display:flex; flex-direction:column; height:100%; }
 .form-foot{ flex:none; padding:10px 18px calc(var(--safe-bottom) + 14px); border-top:1px solid var(--inactive-bg); background:var(--bg); }
 .form-actions{ display:flex; gap:8px; }
-.form-actions .btn{ flex:1; }
+.form-actions .btn{ flex:1; font-family:var(--font-title); font-size:15px; font-weight:500; letter-spacing:.01em; }
 
 /* FAB */
 .fab{ position:fixed; right:calc(var(--safe-right) + 20px); bottom:calc(var(--safe-bottom) + 70px); z-index:40; width:58px; height:58px; border-radius:50%; border:none; background:var(--solid-bg); color:var(--solid-fg); font-size:30px; line-height:1; display:flex; align-items:center; justify-content:center; box-shadow:0 10px 26px rgba(0,0,0,.4); transition:opacity .15s; }

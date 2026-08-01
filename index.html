@@ -61,7 +61,11 @@
 
   <div class="subhead">
     <button id="back-btn" class="back-btn" type="button" aria-label="Назад" hidden>‹</button>
-    <div id="page-title" class="page-title">задачи</div>
+    <nav id="page-nav" class="page-nav">
+      <button class="nav-item active" data-view="tasks" type="button">задачи</button>
+      <button class="nav-item" data-view="projects" type="button">проекты</button>
+      <button class="nav-item" data-view="notes" type="button">заметки</button>
+    </nav>
   </div>
 
   <main class="main">
@@ -111,6 +115,54 @@
           <button id="t-delete" class="btn btn--danger" type="button" hidden>Удалить</button>
         </div>
       </div>
+    </section>
+
+    <!-- ПРОЕКТЫ (канбан) -->
+    <section id="view-projects" class="view" hidden>
+      <div id="kanban" class="kanban"></div>
+    </section>
+
+    <!-- КАРТОЧКА ПРОЕКТА -->
+    <section id="view-project" class="view view--form" hidden>
+      <div class="taskcard scroll">
+        <div class="proj-head">
+          <button id="p-emoji" class="proj-emoji-btn" type="button" aria-label="Эмодзи"></button>
+          <div id="p-title" class="taskcard-title" contenteditable="true" data-placeholder="Новый проект"></div>
+        </div>
+        <div class="taskcard-meta">
+          <button id="p-status" class="status-slot" type="button"></button>
+        </div>
+        <div class="taskcard-meta taskcard-meta--datetime">
+          <button id="p-start" class="meta-pill" type="button"></button>
+          <button id="p-end" class="meta-pill" type="button"></button>
+        </div>
+        <div class="proj-tasks">
+          <div class="proj-tasks-head">задачи</div>
+          <div class="pane-head-tools">
+            <button id="p-date-filter" class="chip chip--date" type="button">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9h17M8 3v3M16 3v3"/></svg>
+              <span id="p-date-filter-label">все дни</span>
+            </button>
+            <button id="p-date-clear" class="chip" type="button" hidden>✕</button>
+            <button id="p-status-filter" class="chip" type="button">статусы</button>
+          </div>
+          <div id="p-task-list" class="task-list"></div>
+          <p id="p-tasks-empty" class="empty" hidden>нет задач</p>
+          <button id="p-add-task" class="proj-add-task" type="button">+ задача</button>
+        </div>
+        <div id="p-desc" class="taskcard-desc" contenteditable="true" data-placeholder="добавить описание..."></div>
+      </div>
+      <div class="form-foot">
+        <div class="form-actions">
+          <button id="p-submit" class="btn btn--solid" type="button">Создать</button>
+          <button id="p-delete" class="btn btn--danger" type="button" hidden>Удалить</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ЗАМЕТКИ (страница, пока пустая) -->
+    <section id="view-notes" class="view" hidden>
+      <div class="pane"></div>
     </section>
 
   </main>
@@ -200,7 +252,7 @@
   <div class="modal-card">
     <div class="modal-title">новый проект</div>
     <div class="projform">
-      <input id="projform-emoji" class="projform-emoji" type="text" maxlength="8" placeholder="🙂" aria-label="Эмодзи" />
+      <button id="projform-emoji" class="projform-emoji" type="button" aria-label="Выбрать эмодзи"></button>
       <input id="projform-name" class="field" type="text" placeholder="название проекта" maxlength="40" aria-label="Название" />
     </div>
     <div class="form-actions">
@@ -228,6 +280,15 @@
     <input id="pw-input" class="field" type="password" placeholder="новый пароль" minlength="6" autocomplete="new-password" />
     <p id="pw-msg" class="auth-msg"></p>
     <div class="form-actions"><button id="pw-ok" class="btn btn--solid" type="button">Сохранить</button></div>
+  </div>
+</div>
+
+<!-- Выбор эмодзи -->
+<div id="emoji-modal" class="modal" hidden>
+  <div class="modal-card emoji-card">
+    <div class="modal-title">эмодзи</div>
+    <input id="emoji-input" class="field" type="text" maxlength="8" placeholder="свой эмодзи (клавиатура)" aria-label="Свой эмодзи" />
+    <div id="emoji-grid" class="emoji-grid scroll"></div>
   </div>
 </div>
 
