@@ -37,6 +37,7 @@
       <input id="auth-email" class="field" type="email" placeholder="e-mail" required autocomplete="email" />
       <input id="auth-pass" class="field" type="password" placeholder="пароль" required autocomplete="current-password" minlength="6" />
       <button id="auth-signin" class="btn btn--solid" type="submit">Войти</button>
+      <button id="auth-forgot" class="auth-forgot" type="button">Забыли пароль?</button>
     </form>
     <div class="auth-divider"><span>или</span></div>
     <button id="auth-google" class="btn btn--google" type="button">
@@ -145,6 +146,13 @@
   </main>
 
   <button id="fab" class="fab" type="button" aria-label="Новая задача">+</button>
+
+  <!-- Поповер аккаунта -->
+  <div id="account-pop" class="account-pop" hidden>
+    <div class="account-label">аккаунт</div>
+    <div id="account-email" class="account-email"></div>
+    <button id="account-signout" class="btn" type="button">Выйти</button>
+  </div>
 </div>
 
 <!-- Календарь -->
@@ -204,6 +212,18 @@
     <div class="form-actions">
       <button id="confirm-yes" class="btn btn--solid" type="button">Да</button>
       <button id="confirm-no" class="btn" type="button">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<!-- Новый пароль (восстановление) -->
+<div id="pw-modal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-title">Новый пароль</div>
+    <input id="pw-input" class="field" type="password" placeholder="новый пароль" minlength="6" autocomplete="new-password" />
+    <p id="pw-msg" class="auth-msg"></p>
+    <div class="form-actions">
+      <button id="pw-ok" class="btn btn--solid" type="button">Сохранить</button>
     </div>
   </div>
 </div>

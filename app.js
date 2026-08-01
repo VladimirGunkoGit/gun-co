@@ -4,7 +4,7 @@
 
   const CFG = window.GUNCO_CONFIG || {};
   const HAS_SUPABASE = !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && window.supabase);
-  const sb = HAS_SUPABASE ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY) : null;
+  const sb = HAS_SUPABASE ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, { auth: { detectSessionInUrl: true, flowType: "implicit", persistSession: true, autoRefreshToken: true } }) : null;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -391,10 +391,23 @@
   }
   function showAuth() {
     $("#app").hidden = true; $("#auth").hidden = false;
+    $("#account-pop").hidden = true;
+    $("#auth-forgot").hidden = !HAS_SUPABASE;
     $("#auth-mode-hint").textContent = HAS_SUPABASE ? "Данные синхронизируются между устройствами." : "Локальный режим: Supabase не настроен, данные хранятся в этом браузере.";
     $("#auth-google").disabled = !HAS_SUPABASE;
   }
-  $("#account-btn").addEventListener("click", async () => { if (sb && Store.userId) { if (await askConfirm("Выйти из аккаунта?")) { await sb.auth.signOut(); Store.userId = null; showAuth(); } } else showAuth(); });
+  // Иконка человечка: если вошёл — поповер с почтой и «Выйти»; если нет — экран входа
+  $("#account-btn").addEventListener("click", async () => {
+    if (!(sb && Store.userId)) { showAuth(); return; }
+    const pop = $("#account-pop");
+    if (!pop.hidden) { pop.hidden = true; return; }
+    let email = "";
+    try { const { data } = await sb.auth.getUser(); email = data && data.user && data.user.email; } catch {}
+    $("#account-email").textContent = email || "аккаунт";
+    pop.hidden = false;
+  });
+  $("#account-signout").addEventListener("click", async () => { $("#account-pop").hidden = true; if (sb) await sb.auth.signOut(); Store.userId = null; showAuth(); });
+  document.addEventListener("click", (e) => { if (!$("#account-pop").hidden && !e.target.closest("#account-pop") && !e.target.closest("#account-btn")) $("#account-pop").hidden = true; });
 
   if (HAS_SUPABASE) {
     $("#auth-form").addEventListener("submit", async (e) => {
@@ -410,8 +423,33 @@
       if (error) return authMsg(trAuthError(error.message), "error");
       if (data.session) { Store.userId = data.user.id; startApp(); } else authMsg("Проверьте почту для подтверждения регистрации.");
     });
-    $("#auth-google").addEventListener("click", async () => { await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href } }); });
-    sb.auth.getSession().then(({ data }) => { if (data.session) { Store.userId = data.session.user.id; startApp(); } else showAuth(); });
+    $("#auth-google").addEventListener("click", async () => { await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + window.location.pathname } }); });
+    // Забыли пароль → письмо со ссылкой сброса
+    $("#auth-forgot").addEventListener("click", async () => {
+      const email = $("#auth-email").value.trim();
+      if (!email) return authMsg("Введите e-mail для сброса", "error");
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname });
+      if (error) return authMsg(trAuthError(error.message), "error");
+      authMsg("Письмо для сброса пароля отправлено на почту", "info");
+    });
+    // Ввод нового пароля после перехода по ссылке из письма
+    $("#pw-ok").addEventListener("click", async () => {
+      const p = $("#pw-input").value;
+      const msg = $("#pw-msg"); msg.classList.add("is-error");
+      if (p.length < 6) { msg.textContent = "Минимум 6 символов"; return; }
+      const { error } = await sb.auth.updateUser({ password: p });
+      if (error) { msg.textContent = trAuthError(error.message); return; }
+      $("#pw-modal").hidden = true; $("#pw-input").value = ""; msg.textContent = ""; toast("Пароль обновлён");
+    });
+    $("#pw-modal").addEventListener("click", (e) => { if (e.target.id === "pw-modal") $("#pw-modal").hidden = true; });
+    sb.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") { if (session) { Store.userId = session.user.id; if ($("#app").hidden) startApp(); } $("#pw-modal").hidden = false; setTimeout(() => $("#pw-input").focus(), 60); return; }
+      if (session && $("#app").hidden) { Store.userId = session.user.id; startApp(); }
+    });
+    sb.auth.getSession().then(({ data }) => {
+      if (data.session) { if ($("#app").hidden) { Store.userId = data.session.user.id; startApp(); } }
+      else if (!location.hash.includes("access_token")) showAuth();
+    });
   } else {
     $("#auth-form").addEventListener("submit", (e) => { e.preventDefault(); startApp(); });
     $("#auth-signup").addEventListener("click", startApp);
