@@ -21,13 +21,15 @@
 
   /* Статусы */
   const STATUSES = [
+    { key: "none",     name: "без статуса", c: "150,153,163" },
     { key: "waiting",  name: "ждёт начала", c: "231,200,106" },
     { key: "progress", name: "в работе",    c: "126,196,232" },
+    { key: "daily",    name: "ежедневно",   c: "199,138,74"  },
     { key: "late",     name: "опоздание",   c: "232,155,184" },
     { key: "done",     name: "готово",      c: "134,217,152" },
   ];
   const SMAP = Object.fromEntries(STATUSES.map((s) => [s.key, s]));
-  const DEFAULT_STATUSES = ["waiting", "progress", "late"];
+  const DEFAULT_STATUSES = ["none", "waiting", "progress", "daily", "late"];
   function statusOf(t) { return SMAP[t.status] ? t.status : (t.is_done ? "done" : "progress"); }
   function statusDot(key, lg) { const s = SMAP[key] || SMAP.progress; return `<span class="status-dot${lg ? " status-dot--lg" : ""}" style="--c:${s.c}"></span>`; }
   function statusPill(key) { const s = SMAP[key] || SMAP.progress; return `<span class="status-pill" style="--c:${s.c}"><span>${s.name}</span>${statusDot(key)}</span>`; }
