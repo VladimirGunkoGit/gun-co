@@ -357,7 +357,10 @@
   $("#task-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const title = $("#t-title").value.trim(); if (!title) return;
-    const fields = { title, description: $("#t-desc").value.trim(), due_date: taskDate || null, due_time: taskTime || null, notify: taskNotify, tag: selectedTag || null };
+    // точный момент напоминания в UTC (учитывает часовой пояс устройства); notified сбрасываем
+    let remind_at = null;
+    if (taskNotify && taskDate && taskTime) { const dt = new Date(`${taskDate}T${taskTime}:00`); if (!isNaN(dt)) remind_at = dt.toISOString(); }
+    const fields = { title, description: $("#t-desc").value.trim(), due_date: taskDate || null, due_time: taskTime || null, notify: taskNotify, tag: selectedTag || null, remind_at, notified: false };
     if (editingTaskId) { const id = editingTaskId; await Store.updateTask(id, fields); editingTaskId = null; openTaskPage(id); }
     else { await Store.addTask(fields); editingTaskId = null; showView("tasks"); }
   });
@@ -404,10 +407,44 @@
     let email = "";
     try { const { data } = await sb.auth.getUser(); email = data && data.user && data.user.email; } catch {}
     $("#account-email").textContent = email || "аккаунт";
+    updateNotifBtn();
     pop.hidden = false;
   });
   $("#account-signout").addEventListener("click", async () => { $("#account-pop").hidden = true; if (sb) await sb.auth.signOut(); Store.userId = null; showAuth(); });
   document.addEventListener("click", (e) => { if (!$("#account-pop").hidden && !e.target.closest("#account-pop") && !e.target.closest("#account-btn")) $("#account-pop").hidden = true; });
+
+  /* ---------- Пуш-уведомления ---------- */
+  const VAPID_PUBLIC = CFG.VAPID_PUBLIC || "";
+  function urlB64ToUint8(base64) {
+    const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+    const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(b64); const arr = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
+  function pushSupported() { return ("Notification" in window) && ("serviceWorker" in navigator) && ("PushManager" in window); }
+  function updateNotifBtn() {
+    const b = $("#notif-btn");
+    b.hidden = !(pushSupported() && sb && Store.userId);
+    if (b.hidden) return;
+    b.textContent = (Notification.permission === "granted") ? "Уведомления включены" : "Включить уведомления";
+  }
+  async function enableNotifications() {
+    if (!pushSupported()) { toast("Уведомления не поддерживаются устройством"); return; }
+    if (!VAPID_PUBLIC) { toast("Не настроен ключ уведомлений"); return; }
+    let perm = Notification.permission;
+    if (perm === "default") perm = await Notification.requestPermission();
+    if (perm !== "granted") { toast("Разрешение на уведомления не выдано"); return; }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(VAPID_PUBLIC) });
+      const j = sub.toJSON();
+      if (sb && Store.userId) await sb.from("push_subscriptions").upsert({ endpoint: j.endpoint, user_id: Store.userId, p256dh: j.keys.p256dh, auth: j.keys.auth }, { onConflict: "endpoint" });
+      toast("Уведомления включены"); updateNotifBtn();
+    } catch (e) { toast("Не удалось включить уведомления"); }
+  }
+  $("#notif-btn").addEventListener("click", enableNotifications);
 
   if (HAS_SUPABASE) {
     $("#auth-form").addEventListener("submit", async (e) => {

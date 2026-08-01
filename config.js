@@ -8,4 +8,5 @@
 window.GUNCO_CONFIG = {
   SUPABASE_URL: "https://ipmzdfiaqdcqxsnlqend.supabase.co",
   SUPABASE_ANON_KEY: "sb_publishable__ugso7CWjvU2UQNICa4dsg_PcHIMGIM",
+  VAPID_PUBLIC: "BKHHukuoU-Q-Eo2tgZsn_eVE9sisNiNvm3AwV68rLa9q7o865ZMbyDWKojuqW6OlZxbcpYknXtvQDWpLPwvnQwQ",
 };
