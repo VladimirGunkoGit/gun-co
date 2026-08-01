@@ -1,5 +1,5 @@
 /* gun.co service worker — офлайн-кэш оболочки */
-const CACHE = "gunco-v29";
+const CACHE = "gunco-v30";
 const ASSETS = [
   "./",
   "./index.html",

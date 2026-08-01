@@ -75,7 +75,7 @@
             <span id="date-filter-label">все дни</span>
           </button>
           <button id="date-clear" class="chip" type="button" hidden>✕</button>
-          <button id="tags-filter" class="chip" type="button">теги</button>
+          <button id="project-filter" class="chip" type="button">проекты</button>
           <button id="status-filter" class="chip" type="button">статусы</button>
         </div>
         <div id="task-list" class="task-list scroll"></div>
@@ -96,11 +96,12 @@
         <div id="t-title" class="taskcard-title" contenteditable="true" data-placeholder="Новая задача"></div>
         <div class="taskcard-meta">
           <button id="t-status" class="status-slot" type="button"></button>
-          <button id="t-tag" class="tag tag-slot" type="button"></button>
+          <button id="t-project" class="proj-pill proj-slot" type="button"></button>
         </div>
         <div class="taskcard-meta taskcard-meta--datetime">
           <button id="t-date" class="meta-pill" type="button"></button>
-          <button id="t-time" class="meta-pill" type="button"></button>
+          <input id="t-time" class="meta-pill meta-time" type="time" step="60" aria-label="время" />
+          <button id="t-notify" class="meta-pill meta-bell" type="button" aria-label="уведомление"></button>
         </div>
         <div id="t-desc" class="taskcard-desc" contenteditable="true" data-placeholder="описание"></div>
       </div>
@@ -141,20 +142,26 @@
   </div>
 </div>
 
-<!-- Время + уведомление -->
-<div id="time-modal" class="modal" hidden>
-  <div class="modal-card time-card">
-    <div class="modal-title">время</div>
-    <input id="time-input" class="field time-input" type="time" step="60" />
-    <button id="time-notify" class="bell-btn" type="button" aria-label="Уведомление">
+<!-- Дата + время + уведомление (большое окно) -->
+<div id="datetime-modal" class="modal" hidden>
+  <div class="modal-card dt-card">
+    <div class="cal-head">
+      <button id="dt-prev" class="icon-btn" aria-label="Назад">‹</button>
+      <div id="dt-title" class="cal-title"></div>
+      <button id="dt-next" class="icon-btn" aria-label="Вперёд">›</button>
+    </div>
+    <div class="cal-weekdays"><span>пн</span><span>вт</span><span>ср</span><span>чт</span><span>пт</span><span>сб</span><span>вс</span></div>
+    <div id="dt-grid" class="cal-grid"></div>
+    <input id="dt-time" class="field time-input" type="time" step="60" aria-label="время" />
+    <button id="dt-notify" class="bell-btn" type="button" aria-label="Уведомление">
       <svg class="bell-ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
         <path d="M6 8.6a6 6 0 0112 0c0 4.4 1.8 5.7 2.4 6.2.4.3.1.9-.4.9H4c-.5 0-.8-.6-.4-.9.6-.5 2.4-1.8 2.4-6.2z"/><path d="M10 19a2 2 0 004 0"/><line class="bell-slash" x1="4.5" y1="4" x2="20" y2="20.5"/>
       </svg>
       <span class="bell-txt">уведомление</span>
     </button>
     <div class="form-actions">
-      <button id="time-done" class="btn btn--solid" type="button">Готово</button>
-      <button id="time-cancel" class="btn" type="button">Отмена</button>
+      <button id="dt-done" class="btn btn--solid" type="button">Готово</button>
+      <button id="dt-cancel" class="btn" type="button">Отмена</button>
     </div>
   </div>
 </div>
@@ -175,25 +182,31 @@
   </div>
 </div>
 
-<!-- Фильтр по тегам (мультивыбор) -->
-<div id="tags-menu" class="modal" hidden>
-  <div class="modal-card tags-modal">
-    <div class="modal-title">теги</div>
+<!-- Проекты (выбор для задачи и фильтр) -->
+<div id="project-modal" class="modal" hidden>
+  <div class="modal-card pick-modal">
+    <div class="modal-title" id="project-modal-title">проект</div>
     <div class="search-wrap">
-      <input id="tags-search" class="field field--search" type="text" placeholder=" " aria-label="Поиск тега" />
+      <input id="project-search" class="field field--search" type="text" placeholder=" " aria-label="Поиск проекта" />
       <svg class="search-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
     </div>
-    <div id="tags-cloud" class="tag-cloud scroll"></div>
-    <button id="tags-reset" class="fmenu-reset" type="button">сбросить</button>
+    <div id="project-list" class="proj-list scroll"></div>
+    <button id="project-reset" class="fmenu-reset" type="button" hidden>сбросить</button>
   </div>
 </div>
 
-<!-- Выбор тега для задачи (одиночный) -->
-<div id="tagpick-modal" class="modal" hidden>
-  <div class="modal-card tags-modal">
-    <div class="modal-title">тег</div>
-    <div id="tagpick-cloud" class="tag-cloud scroll"></div>
-    <button id="tagpick-add" class="tag-add" type="button">+ новый тег</button>
+<!-- Создание проекта -->
+<div id="projform-modal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-title">новый проект</div>
+    <div class="projform">
+      <input id="projform-emoji" class="projform-emoji" type="text" maxlength="8" placeholder="🙂" aria-label="Эмодзи" />
+      <input id="projform-name" class="field" type="text" placeholder="название проекта" maxlength="40" aria-label="Название" />
+    </div>
+    <div class="form-actions">
+      <button id="projform-ok" class="btn btn--solid" type="button">Добавить</button>
+      <button id="projform-cancel" class="btn" type="button">Отмена</button>
+    </div>
   </div>
 </div>
 
@@ -215,18 +228,6 @@
     <input id="pw-input" class="field" type="password" placeholder="новый пароль" minlength="6" autocomplete="new-password" />
     <p id="pw-msg" class="auth-msg"></p>
     <div class="form-actions"><button id="pw-ok" class="btn btn--solid" type="button">Сохранить</button></div>
-  </div>
-</div>
-
-<!-- Новый тег -->
-<div id="tag-modal" class="modal" hidden>
-  <div class="modal-card">
-    <div class="modal-title">Новый тег</div>
-    <input id="tag-input" class="field" type="text" placeholder="название тега" maxlength="24" />
-    <div class="form-actions">
-      <button id="tag-ok" class="btn btn--solid" type="button">Добавить</button>
-      <button id="tag-cancel" class="btn" type="button">Отмена</button>
-    </div>
   </div>
 </div>
 
