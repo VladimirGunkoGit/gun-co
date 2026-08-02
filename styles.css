@@ -151,8 +151,8 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 /* Навигация по страницам */
 .page-nav{ display:flex; align-items:flex-end; gap:16px; flex:1; min-width:0; min-height:calc(var(--fs-title) * 1.5 * 1.25); overflow-x:auto; overflow-y:hidden; padding-right:28px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
 .page-nav::-webkit-scrollbar{ display:none; }
-.nav-item{ flex:none; background:transparent; border:none; padding:0; cursor:pointer; font-family:var(--font-title); font-weight:600; text-transform:lowercase; letter-spacing:.01em; color:var(--fg); white-space:nowrap; font-size:calc(var(--fs-title) * 1.5 * .66); opacity:.5; transition:font-size .28s ease, opacity .28s ease; }
-.nav-item.active{ font-size:calc(var(--fs-title) * 1.5); opacity:1; cursor:default; }
+.nav-item{ flex:none; background:transparent; border:none; padding:0; cursor:pointer; font-family:var(--font-title); font-weight:600; text-transform:lowercase; letter-spacing:.01em; color:var(--fg); white-space:nowrap; font-size:calc(var(--fs-title) * 1.5 * .66); opacity:.5; }
+.nav-item.active{ opacity:1; cursor:default; }
 .back-btn{ background:transparent; border:none; color:var(--fg); font-size:30px; line-height:1; width:34px; height:34px; margin-left:-6px; display:flex; align-items:center; justify-content:center; }
 .main{ flex:1; min-height:0; position:relative; }
 .view{ position:absolute; inset:0; display:flex; flex-direction:column; overflow:hidden; }
@@ -282,7 +282,7 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 @media (max-width:767px){
   #page-nav{
     position:absolute; left:0; right:0;
-    bottom:calc(var(--safe-bottom) + 10px);
+    bottom:calc(var(--safe-bottom) + 20px);
     z-index:30;
     padding-left:18px; padding-right:28px;
   }
