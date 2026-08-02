@@ -160,9 +160,26 @@
       </div>
     </section>
 
-    <!-- ЗАМЕТКИ (страница, пока пустая) -->
+    <!-- ЗАМЕТКИ (список) -->
     <section id="view-notes" class="view" hidden>
-      <div class="pane"></div>
+      <div class="pane">
+        <div id="note-list" class="task-list scroll"></div>
+        <p id="notes-empty" class="empty" hidden>Пока нет заметок</p>
+      </div>
+    </section>
+
+    <!-- КАРТОЧКА ЗАМЕТКИ -->
+    <section id="view-note" class="view view--form" hidden>
+      <div class="taskcard scroll">
+        <div id="n-title" class="taskcard-title" contenteditable="true" data-placeholder="Новая заметка"></div>
+        <div id="n-body" class="taskcard-desc note-body" contenteditable="true" data-placeholder="начните писать..."></div>
+      </div>
+      <div class="form-foot">
+        <div class="form-actions">
+          <button id="n-submit" class="btn btn--solid" type="button">Создать</button>
+          <button id="n-delete" class="btn btn--danger" type="button" hidden>Удалить</button>
+        </div>
+      </div>
     </section>
 
   </main>
@@ -188,9 +205,9 @@
     <div class="cal-weekdays"><span>пн</span><span>вт</span><span>ср</span><span>чт</span><span>пт</span><span>сб</span><span>вс</span></div>
     <div id="cal-grid" class="cal-grid"></div>
     <div class="cal-actions">
-      <button id="cal-all" class="btn" type="button" hidden>Все дни</button>
       <button id="cal-cancel" class="btn" type="button">Отмена</button>
     </div>
+    <button id="cal-all" class="modal-clear" type="button" hidden>очистить</button>
   </div>
 </div>
 
@@ -215,6 +232,7 @@
       <button id="dt-done" class="btn btn--solid" type="button">Готово</button>
       <button id="dt-cancel" class="btn" type="button">Отмена</button>
     </div>
+    <button id="dt-clear" class="modal-clear" type="button">очистить</button>
   </div>
 </div>
 
@@ -269,6 +287,7 @@
     </div>
     <div id="project-list" class="proj-list scroll"></div>
     <button id="project-reset" class="fmenu-reset" type="button" hidden>сбросить</button>
+    <button id="project-clear" class="modal-clear" type="button" hidden>убрать проект</button>
   </div>
 </div>
 
@@ -315,6 +334,7 @@
     <div class="modal-title">эмодзи</div>
     <input id="emoji-input" class="field" type="text" maxlength="8" placeholder="свой эмодзи (клавиатура)" aria-label="Свой эмодзи" />
     <div id="emoji-grid" class="emoji-grid scroll"></div>
+    <button id="emoji-clear" class="modal-clear" type="button" hidden>убрать эмодзи</button>
   </div>
 </div>
 

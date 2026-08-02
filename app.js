@@ -86,6 +86,7 @@
       d.tasks.forEach((t) => { if (!t.id) t.id = uid(); if (!t.status) t.status = t.is_done ? "done" : "progress"; if ("tag" in t) delete t.tag; });
       if (!d.projectsV1) { d.projects = DEFAULT_PROJECTS.map((p) => ({ id: uid(), emoji: p.emoji, name: p.name, status: "progress" })); d.projectsV1 = true; delete d.tags; delete d.tagsV2; }
       d.projects = d.projects || [];
+      d.notes = d.notes || [];
       if (!d.statusesV1) { d.taskStatuses = seedStatuses(); d.projectStatuses = seedStatuses(); d.statusesV1 = true; }
       d.taskStatuses = d.taskStatuses || seedStatuses();
       d.projectStatuses = d.projectStatuses || seedStatuses();
@@ -149,6 +150,24 @@
       const key = kind === "project" ? "projectStatuses" : "taskStatuses";
       d[key] = d[key].filter((x) => x.id !== id); Local.write(d);
     },
+    async notes() {
+      if (sb && this.userId) { const { data } = await sb.from("notes").select("*").eq("user_id", this.userId).order("updated_at", { ascending: false }); return data || []; }
+      return Local.ensure().notes.slice().sort((a, b) => String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || "")));
+    },
+    async addNote({ title, body }) {
+      const now = new Date().toISOString(); const base = { title: title || "", body: body || "" };
+      if (sb && this.userId) { const { data } = await sb.from("notes").insert({ ...base, user_id: this.userId }).select().single(); return data; }
+      const d = Local.ensure(); const row = { id: uid(), created_at: now, updated_at: now, ...base }; d.notes.push(row); Local.write(d); return row;
+    },
+    async updateNote(id, fields) {
+      const patch = { ...fields, updated_at: new Date().toISOString() };
+      if (sb && this.userId) { await sb.from("notes").update(patch).eq("id", id); return; }
+      const d = Local.ensure(); const n = d.notes.find((x) => x.id === id); if (n) Object.assign(n, patch); Local.write(d);
+    },
+    async deleteNote(id) {
+      if (sb && this.userId) { await sb.from("notes").delete().eq("id", id); return; }
+      const d = Local.ensure(); d.notes = d.notes.filter((x) => x.id !== id); Local.write(d);
+    },
     async settings() { if (sb && this.userId) { const { data } = await sb.from("settings").select("*").eq("user_id", this.userId).single(); return data || { theme: "dark", count: 5 }; } return Local.ensure().settings; },
     async saveSettings(s) { if (sb && this.userId) { await sb.from("settings").upsert({ user_id: this.userId, ...s }); return; } const d = Local.ensure(); d.settings = { ...d.settings, ...s }; Local.write(d); },
   };
@@ -187,9 +206,9 @@
 
   /* Календарь-модалка (только дата) */
   const cal = { y: 0, m: 0, value: "", allowAll: false, onPick: null };
-  function openCalendar({ value, allowAll = false, onPick }) {
+  function openCalendar({ value, allowAll = false, clearLabel = "Все дни", onPick }) {
     const base = (value || todayStr()).split("-"); cal.y = +base[0]; cal.m = +base[1] - 1; cal.value = value || (allowAll ? "" : todayStr()); cal.allowAll = allowAll; cal.onPick = onPick;
-    $("#cal-all").hidden = !allowAll; renderCal(); $("#cal").hidden = false;
+    $("#cal-all").hidden = !allowAll; $("#cal-all").textContent = clearLabel; renderCal(); $("#cal").hidden = false;
   }
   function renderCal() { drawCal({ y: cal.y, m: cal.m, value: cal.value }, $("#cal-grid"), $("#cal-title"), (d) => { $("#cal").hidden = true; cal.onPick && cal.onPick(d); }); }
   function calPrev() { cal.m--; if (cal.m < 0) { cal.m = 11; cal.y--; } renderCal(); }
@@ -215,6 +234,7 @@
   $("#dt-cancel").addEventListener("click", () => ($("#datetime-modal").hidden = true));
   $("#datetime-modal").addEventListener("click", (e) => { if (e.target.id === "datetime-modal") $("#datetime-modal").hidden = true; });
   $("#dt-done").addEventListener("click", () => { $("#datetime-modal").hidden = true; if (dt.onDone) dt.onDone(dt.date, $("#dt-time").value, !$("#dt-notify").classList.contains("off")); });
+  $("#dt-clear").addEventListener("click", () => { $("#datetime-modal").hidden = true; if (dt.onDone) dt.onDone("", "", !$("#dt-notify").classList.contains("off")); });
 
   /* ---------- Статус: пикер (одиночный) + создание/удаление кастомных ---------- */
   function statusAddBtn() { return `<button type="button" class="status-add" aria-label="Новый статус"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 6.5v11M6.5 12h11"/></svg></button>`; }
@@ -263,16 +283,17 @@
   let projMode = "single", projCurrent = null, projOnPick = null;
   async function openProjectPicker(currentId, onPick) {
     await loadProjects(); projMode = "single"; projCurrent = currentId; projOnPick = onPick;
-    $("#project-modal-title").textContent = "проект"; $("#project-reset").hidden = true;
+    $("#project-modal-title").textContent = "проект"; $("#project-reset").hidden = true; $("#project-clear").hidden = !currentId;
     $("#project-search").value = ""; $("#project-modal .search-wrap").classList.remove("has-text");
     renderProjectList(); $("#project-modal").hidden = false;
   }
   async function openProjectFilter() {
     await loadProjects(); projMode = "filter";
-    $("#project-modal-title").textContent = "проекты"; $("#project-reset").hidden = false;
+    $("#project-modal-title").textContent = "проекты"; $("#project-reset").hidden = false; $("#project-clear").hidden = true;
     $("#project-search").value = ""; $("#project-modal .search-wrap").classList.remove("has-text");
     renderProjectList(); $("#project-modal").hidden = false;
   }
+  $("#project-clear").addEventListener("click", () => { $("#project-modal").hidden = true; if (projOnPick) projOnPick(null); });
   function renderProjectList() {
     const q = ($("#project-search").value || "").trim().toLowerCase();
     const ordered = orderedProjects();
@@ -300,8 +321,10 @@
     emojiOnPick = onPick; $("#emoji-input").value = "";
     $("#emoji-grid").innerHTML = EMOJIS.map((e) => `<button type="button" class="emoji-cell ${e === current ? "is-cur" : ""}" data-e="${e}">${e}</button>`).join("");
     $$("#emoji-grid .emoji-cell").forEach((b) => b.addEventListener("click", () => { $("#emoji-modal").hidden = true; if (emojiOnPick) emojiOnPick(b.dataset.e); }));
+    $("#emoji-clear").hidden = !current;
     $("#emoji-modal").hidden = false;
   }
+  $("#emoji-clear").addEventListener("click", () => { $("#emoji-modal").hidden = true; if (emojiOnPick) emojiOnPick(""); });
   $("#emoji-input").addEventListener("input", (e) => { const v = [...(e.target.value || "").trim()]; if (v.length) { const em = v[v.length - 1]; $("#emoji-modal").hidden = true; if (emojiOnPick) emojiOnPick(em); } });
   $("#emoji-modal").addEventListener("click", (e) => { if (e.target.id === "emoji-modal") $("#emoji-modal").hidden = true; });
   $("#projform-emoji").addEventListener("click", () => openEmojiModal(formEmoji, (em) => { formEmoji = em; renderFormEmoji(); }));
@@ -422,6 +445,12 @@
       const k = (e.key || "").toLowerCase();
       if (k === "k" || (e.shiftKey && k === "u")) { e.preventDefault(); openLinkModal(el); }
     });
+    el.addEventListener("click", (e) => {
+      const a = e.target.closest("a"); if (!a) return;
+      const href = a.getAttribute("href"); if (!href) return;
+      e.preventDefault();
+      window.open(href, "_blank", "noopener,noreferrer");
+    });
     el.addEventListener("paste", (e) => {
       const cd = e.clipboardData; if (!cd) return;
       const html = cd.getData("text/html"); const text = cd.getData("text/plain");
@@ -440,24 +469,26 @@
   function showView(name) {
     currentView = name;
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
-    const isForm = name === "task" || name === "project";
+    const isForm = name === "task" || name === "project" || name === "note";
     $("#back-btn").hidden = !isForm;
     $("#page-nav").hidden = isForm;
-    $("#fab").hidden = !(name === "tasks" || name === "projects");
+    $("#fab").hidden = !(name === "tasks" || name === "projects" || name === "notes");
     if (!isForm) $$("#page-nav .nav-item").forEach((b) => { const on = b.dataset.view === name; b.classList.toggle("active", on); if (on) b.scrollIntoView({ inline: "nearest", block: "nearest" }); });
     if (name === "tasks") renderTasks();
     else if (name === "projects") renderKanban();
     else if (name === "project") renderProjectTasks();
+    else if (name === "notes") renderNotes();
   }
   $$("#page-nav .nav-item").forEach((b) => b.addEventListener("click", () => { if (currentView !== b.dataset.view) showView(b.dataset.view); }));
   function goBack() {
     const m = $$(".modal").find((x) => !x.hidden); if (m) { m.hidden = true; return; }
     if (currentView === "task") { leaveTask(); return; }
     if (currentView === "project") { leaveProject(); return; }
+    if (currentView === "note") { leaveNote(); return; }
   }
   $("#back-btn").addEventListener("click", goBack);
   $("#brand-home").addEventListener("click", () => showView("tasks"));
-  $("#fab").addEventListener("click", () => { if (currentView === "projects") newProject(); else newTask(); });
+  $("#fab").addEventListener("click", () => { if (currentView === "projects") newProject(); else if (currentView === "notes") newNote(); else newTask(); });
   (function () { const main = $(".main"); let sx = 0, sy = 0, on = false;
     main.addEventListener("touchstart", (e) => { if (e.touches.length !== 1 || e.target.closest(".swipe-row") || e.target.closest("[contenteditable]")) { on = false; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true });
     main.addEventListener("touchmove", (e) => { if (!on) return; if (Math.abs(e.touches[0].clientY - sy) > Math.abs(e.touches[0].clientX - sx)) on = false; }, { passive: true });
@@ -594,7 +625,7 @@
   }
   async function saveTaskDraft() { if (editingTaskId) await Store.updateTask(editingTaskId, taskFields()); }
   const saveTaskDebounced = debounce(saveTaskDraft, 400);
-  $("#t-date").addEventListener("click", () => openCalendar({ value: cardDate, onPick: (v) => { cardDate = v; taskTouched = true; renderCardMeta(); saveTaskDraft(); } }));
+  $("#t-date").addEventListener("click", () => openCalendar({ value: cardDate, allowAll: true, clearLabel: "очистить дату", onPick: (v) => { cardDate = v; taskTouched = true; renderCardMeta(); saveTaskDraft(); } }));
   $("#t-time").addEventListener("input", (e) => { cardTime = e.target.value; taskTouched = true; saveTaskDraft(); });
   $("#t-notify").addEventListener("click", () => { cardNotify = !cardNotify; taskTouched = true; renderCardMeta(); saveTaskDraft(); });
   $("#t-status").addEventListener("click", () => openStatusPicker("task", cardStatus, (k) => { cardStatus = k; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
@@ -637,12 +668,10 @@
   }
   function kanbanCard(p, tasks) {
     const badges = projBadges(p.id, tasks);
-    const ds = p.start_date && p.end_date ? `${fmtFull(p.start_date)} – ${fmtFull(p.end_date)}` : p.start_date ? `с ${fmtFull(p.start_date)}` : p.end_date ? `до ${fmtFull(p.end_date)}` : "";
-    const dates = ds ? `<div class="kb-dates">${ds}</div>` : "";
     const badgesHtml = badges.length ? `<div class="kb-badges">${badges.map((b) => `<span class="kb-badge" style="--c:${b.c}">${b.count}</span>`).join("")}</div>` : "";
     return `<div class="kb-card" data-id="${p.id}">
-      <div class="kb-card-title"><span class="proj-emoji">${projEmoji(p)}</span><span>${esc(p.name || "Без названия")}</span></div>
-      ${dates}${badgesHtml}
+      <div class="kb-card-title"><span class="proj-emoji">${projEmoji(p)}</span><span class="kb-name">${esc(p.name || "Без названия")}</span></div>
+      ${badgesHtml}
     </div>`;
   }
   async function renderKanban() {
@@ -673,8 +702,8 @@
   const saveProjectDebounced = debounce(saveProjectDraft, 400);
   $("#p-emoji").addEventListener("click", () => openEmojiModal(pEmoji, (em) => { pEmoji = em; projTouched = true; renderProjectMeta(); saveProjectDraft(); }));
   $("#p-status").addEventListener("click", () => openStatusPicker("project", pStatus, (k) => { pStatus = k; projTouched = true; renderProjectMeta(); saveProjectDraft(); }));
-  $("#p-start").addEventListener("click", () => openCalendar({ value: pStart || todayStr(), onPick: (v) => { pStart = v; projTouched = true; renderProjectMeta(); saveProjectDraft(); } }));
-  $("#p-end").addEventListener("click", () => openCalendar({ value: pEnd || todayStr(), onPick: (v) => { pEnd = v; projTouched = true; renderProjectMeta(); saveProjectDraft(); } }));
+  $("#p-start").addEventListener("click", () => openCalendar({ value: pStart, allowAll: true, clearLabel: "очистить дату", onPick: (v) => { pStart = v || null; projTouched = true; renderProjectMeta(); saveProjectDraft(); } }));
+  $("#p-end").addEventListener("click", () => openCalendar({ value: pEnd, allowAll: true, clearLabel: "очистить дату", onPick: (v) => { pEnd = v || null; projTouched = true; renderProjectMeta(); saveProjectDraft(); } }));
   $("#p-title").addEventListener("input", () => { projTouched = true; saveProjectDebounced(); });
   $("#p-desc").addEventListener("input", () => { projTouched = true; saveProjectDebounced(); });
   initChecklist($("#p-desc")); initFormatting($("#p-desc"));
@@ -706,6 +735,64 @@
   }
   $("#p-submit").addEventListener("click", leaveProject);
   $("#p-delete").addEventListener("click", async () => { if (editingProjectId && await askConfirm("Удалить проект?")) { await Store.deleteProject(editingProjectId); editingProjectId = null; await loadProjects(); showView("projects"); } });
+
+  /* ---------- ЗАМЕТКИ ---------- */
+  function notePreview(body) { const t = document.createElement("div"); t.innerHTML = body || ""; return t.textContent.replace(/\s+/g, " ").trim(); }
+  function noteTrunc(s, n) { s = s || ""; return s.length > n ? esc(s.slice(0, n)) + "…" : esc(s); }
+  let notesById = {};
+  async function renderNotes() {
+    const notes = await Store.notes();
+    notesById = {}; notes.forEach((n) => (notesById[n.id] = n));
+    $("#notes-empty").hidden = notes.length > 0;
+    $("#note-list").innerHTML = notes.map((n) => {
+      const title = (n.title || "").trim() || "Без названия";
+      const prev = notePreview(n.body);
+      return `<div class="note swipeable" data-id="${n.id}">
+        <div class="swipe-del">${TRASH_SVG}</div>
+        <div class="swipe-row note-row">
+          <div class="note-title">${noteTrunc(title, 40)}</div>
+          ${prev ? `<div class="note-preview">${noteTrunc(prev, 40)}</div>` : ""}
+        </div>
+      </div>`;
+    }).join("");
+    $$("#note-list .note").forEach((el) => attachSwipe(el, async () => { await Store.deleteNote(el.dataset.id); renderNotes(); }));
+  }
+  $("#note-list").addEventListener("click", (e) => {
+    if (justSwiped) return;
+    const el = e.target.closest(".note"); if (!el) return; const n = notesById[el.dataset.id]; if (!n) return;
+    openNoteEdit(n);
+  });
+
+  let editingNoteId = null, noteTouched = false;
+  function noteFields() { return { title: $("#n-title").textContent.trim(), body: descSerialize($("#n-body")) }; }
+  async function saveNoteDraft() { if (editingNoteId) await Store.updateNote(editingNoteId, noteFields()); }
+  const saveNoteDebounced = debounce(saveNoteDraft, 400);
+  $("#n-title").addEventListener("input", () => { noteTouched = true; saveNoteDebounced(); });
+  $("#n-body").addEventListener("input", () => { noteTouched = true; saveNoteDebounced(); });
+  initChecklist($("#n-body")); initFormatting($("#n-body"));
+  async function newNote() {
+    noteTouched = false; $("#n-title").innerText = ""; $("#n-body").innerHTML = "";
+    const draft = await Store.addNote(noteFields()); editingNoteId = draft.id;
+    $("#n-submit").textContent = "Готово"; $("#n-delete").hidden = false;
+    showView("note"); $("#n-title").focus();
+  }
+  function openNoteEdit(n) {
+    editingNoteId = n.id; noteTouched = true;
+    $("#n-title").innerText = n.title || ""; descLoad($("#n-body"), n.body || "");
+    $("#n-submit").textContent = "Готово"; $("#n-delete").hidden = false;
+    showView("note");
+  }
+  async function leaveNote() {
+    if (editingNoteId) {
+      const f = noteFields();
+      if (!noteTouched && !f.title && !f.body) { await Store.deleteNote(editingNoteId); }
+      else { if (!f.title) f.title = "Без названия"; await Store.updateNote(editingNoteId, f); }
+    }
+    editingNoteId = null;
+    showView("notes");
+  }
+  $("#n-submit").addEventListener("click", leaveNote);
+  $("#n-delete").addEventListener("click", async () => { if (editingNoteId && await askConfirm("Удалить заметку?")) { await Store.deleteNote(editingNoteId); editingNoteId = null; showView("notes"); } });
 
   /* ---------- Аккаунт ---------- */
   $("#account-btn").addEventListener("click", async () => {

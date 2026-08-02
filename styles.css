@@ -79,15 +79,13 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .kanban{ display:flex; align-items:flex-start; gap:14px; height:100%; overflow-x:auto; overflow-y:hidden; padding:14px 18px 12px; -webkit-overflow-scrolling:touch; }
 .kanban::-webkit-scrollbar{ height:6px; }
 .kanban::-webkit-scrollbar-thumb{ background:var(--scroll); border-radius:3px; }
-.kb-col{ flex:0 0 190px; width:190px; max-height:100%; display:flex; flex-direction:column; min-height:0; }
+.kb-col{ flex:0 0 230px; width:230px; max-height:100%; display:flex; flex-direction:column; min-height:0; }
 .kb-col-head{ display:flex; align-items:center; gap:8px; font-size:var(--fs-body); color:var(--text-soft); text-transform:lowercase; padding:0 2px 10px; flex:none; }
 .kb-cards{ display:flex; flex-direction:column; gap:8px; overflow-y:auto; min-height:0; padding-bottom:6px; }
-.kb-card{ position:relative; background:var(--inactive-bg); border-radius:5px; padding:11px 12px; cursor:pointer; display:flex; flex-direction:column; gap:8px; }
-.kb-card-title{ display:flex; align-items:center; gap:7px; font-size:14px; font-weight:500; word-break:break-word; }
-.kb-card-title .proj-emoji{ font-size:15px; line-height:1; }
-.kb-status{ align-self:flex-start; }
-.kb-dates{ font-size:11px; color:var(--muted); }
-.kb-badges{ display:flex; flex-wrap:wrap; gap:4px; justify-content:flex-start; margin-top:2px; }
+.kb-card{ background:var(--inactive-bg); border-radius:5px; padding:11px 12px; cursor:pointer; display:flex; align-items:center; gap:10px; }
+.kb-card-title{ flex:1; min-width:0; display:flex; align-items:center; gap:7px; font-size:14px; font-weight:500; overflow:hidden; white-space:nowrap; -webkit-mask-image:linear-gradient(to right, #000 calc(100% - 26px), transparent); mask-image:linear-gradient(to right, #000 calc(100% - 26px), transparent); }
+.kb-card-title .proj-emoji{ flex:none; font-size:15px; line-height:1; }
+.kb-badges{ flex:none; display:flex; gap:4px; }
 .kb-badge{ min-width:22px; height:22px; padding:0 6px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; background:rgba(var(--c), .22); color:rgb(var(--c)); }
 .kb-empty{ padding:24px 18px; }
 
@@ -103,6 +101,11 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 #p-task-list{ overflow:visible; flex:none; padding:0; }
 #p-desc{ margin-top:40px; }
 .task-date{ flex:none; text-align:right; color:var(--muted); font-size:var(--fs-body); white-space:nowrap; text-transform:uppercase; letter-spacing:.02em; background:transparent; border:none; padding:0; }
+/* Список заметок */
+#note-list{ display:flex; flex-direction:column; gap:6px; }
+.note .swipe-row{ display:block; padding:9px 2px; }
+.note-title{ font-size:var(--fs-body); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.note-preview{ font-size:var(--fs-body); color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:3px; }
 
 /* СТАТУСЫ — пилюля (имя + светящаяся точка справа) */
 .status-pill{ display:inline-flex; align-items:center; gap:8px; border:none; border-radius:5px; padding:3px 10px; font-size:var(--fs-body); line-height:1.15; white-space:nowrap; background:rgba(var(--c), .24); color:var(--fg); }
@@ -225,7 +228,7 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .account-pop .btn{ width:100%; }
 
 /* Модалки */
-.modal{ position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:22px calc(var(--safe-right) + 22px) 22px calc(var(--safe-left) + 22px); background:rgba(0,0,0,.55); }
+.modal{ position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:22px calc(var(--safe-right) + 22px) 22px calc(var(--safe-left) + 22px); background:rgba(255,255,255,.14); }
 [data-theme="light"] .modal{ background:rgba(0,0,0,.28); }
 .modal-card{ width:100%; max-width:360px; background:var(--bg); border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:12px; box-shadow:0 20px 60px rgba(0,0,0,.5); }
 .modal-title{ font-family:var(--font-title); font-size:var(--fs-sub); text-transform:lowercase; }
@@ -261,6 +264,8 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .field--search{ padding-left:40px; }
 .pick-modal{ max-width:min(92vw,460px); max-height:80vh; }
 .fmenu-reset{ align-self:center; font-size:11px; color:var(--muted); background:transparent; border:none; text-align:center; padding:6px 14px; text-transform:lowercase; letter-spacing:.04em; }
+.modal-clear{ align-self:center; background:transparent; border:none; color:var(--muted); font-size:var(--fs-body); padding:8px 14px; margin-top:2px; cursor:pointer; }
+.modal-clear:active{ opacity:.55; }
 
 /* Тост */
 .toast{ position:fixed; left:50%; bottom:calc(var(--safe-bottom) + 24px); transform:translateX(-50%); z-index:80; background:var(--solid-bg); color:var(--solid-fg); padding:9px 18px; border-radius:var(--radius); font-size:var(--fs-body); box-shadow:0 8px 24px rgba(0,0,0,.35); }
@@ -278,6 +283,6 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 
 /* Комп-версия: всё крупнее в 1.25× (эквивалент браузерных 125%) */
 @media (min-width:1000px){
-  html{ zoom:1.25; }
-  .auth, .app{ height:auto; min-height:100vh; min-height:100dvh; }
+  html{ zoom:1.25; overflow:hidden; }
+  .auth, .app{ height:calc(100vh / 1.25); height:calc(100dvh / 1.25); }
 }
