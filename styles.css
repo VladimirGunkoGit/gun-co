@@ -112,6 +112,13 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .status-list .status-pill{ cursor:pointer; padding:4px 11px; }
 .status-list .status-pill.off{ background:var(--inactive-bg); color:var(--muted); }
 .status-list .status-pill.off .status-dot{ filter:blur(.3px) grayscale(.35); opacity:.55; box-shadow:none; }
+.status-add{ display:inline-flex; align-items:center; justify-content:center; border:none; background:var(--inactive-bg); color:var(--fg); border-radius:5px; padding:4px 12px; min-width:40px; cursor:pointer; }
+.status-pill .status-del{ margin-left:1px; margin-right:-3px; opacity:.5; font-size:15px; line-height:1; padding:0 3px; cursor:pointer; }
+.status-pill .status-del:hover{ opacity:1; }
+.statusform-swatches{ display:flex; flex-wrap:wrap; gap:10px; }
+.swatch{ width:38px; height:38px; border:none; border-radius:9px; background:rgba(var(--c), .24); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+.swatch .status-dot{ width:13px; height:13px; }
+.swatch.is-cur{ box-shadow:inset 0 0 0 2px var(--fg); }
 
 /* Поля */
 .field{ width:100%; background:var(--field-bg); color:var(--fg); border:none; border-radius:13px; padding:13px 15px; font-size:var(--fs-body); font-weight:300; outline:none; margin:0; }
@@ -192,11 +199,10 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .taskcard-desc{ margin-top:20px; outline:none; white-space:pre-wrap; word-break:break-word; font-size:15px; color:var(--text-soft); font-weight:300; min-height:2em; }
 .taskcard-desc:empty::before{ content:attr(data-placeholder); color:var(--muted); opacity:.5; }
 /* Чек-листы внутри текста */
-.taskcard-desc .chk{ display:flex; align-items:flex-start; gap:9px; margin:5px 0 5px 26px; }
-.chk-box{ flex:none; width:17px; height:17px; margin-top:1px; border:1.5px solid var(--line); border-radius:4px; position:relative; cursor:pointer; user-select:none; }
-.chk[data-checked="1"] .chk-box::after{ content:""; position:absolute; left:5px; top:1px; width:5px; height:9px; border:solid var(--fg); border-width:0 2px 2px 0; transform:rotate(45deg); }
-.chk-text{ flex:1; min-width:0; }
-.chk.is-done .chk-text{ opacity:.5; text-decoration:line-through; }
+.taskcard-desc .chk{ position:relative; padding-left:28px; margin:5px 0 5px 26px; min-height:1.35em; }
+.taskcard-desc .chk::before{ content:""; position:absolute; left:0; top:2px; width:17px; height:17px; border:1.5px solid var(--line); border-radius:4px; cursor:pointer; }
+.taskcard-desc .chk[data-checked="1"]::after{ content:""; position:absolute; left:6px; top:4px; width:5px; height:9px; border:solid var(--fg); border-width:0 2px 2px 0; transform:rotate(45deg); pointer-events:none; }
+.taskcard-desc .chk.is-done{ opacity:.5; text-decoration:line-through; }
 
 /* Форма-подвал */
 .form{ display:flex; flex-direction:column; height:100%; }
@@ -261,6 +267,7 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
   .topbar{ padding-left:5vw; padding-right:5vw; }
   .subhead{ padding-left:5vw; padding-right:5vw; }
   .pane, .slider-wrap{ padding-left:5vw; padding-right:5vw; }
+  .kanban{ padding-left:5vw; padding-right:5vw; }
   .taskcard{ width:60%; margin-inline:auto; padding-left:0; padding-right:0; }
   .form-foot{ width:60%; margin-inline:auto; padding-left:0; padding-right:0; }
   .fab{ right:calc(var(--safe-right) + 34px); bottom:34px; }

@@ -19,20 +19,34 @@
   const MONTHS_SHORT = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
   const WEEKDAYS = ["ВС","ПН","ВТ","СР","ЧТ","ПТ","СБ"];
 
-  /* Статусы */
-  const STATUSES = [
-    { key: "none",     name: "без статуса", c: "150,153,163" },
-    { key: "waiting",  name: "ждёт начала", c: "231,200,106" },
-    { key: "progress", name: "в работе",    c: "126,196,232" },
-    { key: "daily",    name: "ежедневно",   c: "199,138,74"  },
-    { key: "late",     name: "опоздание",   c: "232,155,184" },
-    { key: "done",     name: "готово",      c: "134,217,152" },
+  /* Статусы (пользовательские наборы: task и project — раздельные) */
+  const STATUS_PALETTE = ["150,153,163","231,200,106","126,196,232","199,138,74","232,155,184","134,217,152","178,150,232","110,206,197","232,120,120"];
+  const BUILTIN_STATUSES = [
+    { id: "none",     name: "без статуса", c: "150,153,163", ord: 0,   done: false },
+    { id: "waiting",  name: "ждёт начала", c: "231,200,106", ord: 1,   done: false },
+    { id: "progress", name: "в работе",    c: "126,196,232", ord: 2,   done: false },
+    { id: "daily",    name: "ежедневно",   c: "199,138,74",  ord: 3,   done: false },
+    { id: "late",     name: "опоздание",   c: "232,155,184", ord: 4,   done: false },
+    { id: "done",     name: "готово",      c: "134,217,152", ord: 999, done: true  },
   ];
-  const SMAP = Object.fromEntries(STATUSES.map((s) => [s.key, s]));
-  const DEFAULT_STATUSES = ["none", "waiting", "progress", "daily", "late"];
-  function statusOf(t) { return SMAP[t.status] ? t.status : (t.is_done ? "done" : "progress"); }
-  function statusDot(key, lg) { const s = SMAP[key] || SMAP.progress; return `<span class="status-dot${lg ? " status-dot--lg" : ""}" style="--c:${s.c}"></span>`; }
-  function statusPill(key) { const s = SMAP[key] || SMAP.progress; return `<span class="status-pill" style="--c:${s.c}"><span>${s.name}</span>${statusDot(key)}</span>`; }
+  function seedStatuses() { return BUILTIN_STATUSES.map((s) => ({ ...s, builtin: true })); }
+  let taskStatusesCache = seedStatuses(), projStatusesCache = seedStatuses();
+  const byOrd = (a, b) => (a.ord || 0) - (b.ord || 0);
+  function statusSet(kind) { return kind === "project" ? projStatusesCache : taskStatusesCache; }
+  function statusById(kind, id) { return statusSet(kind).find((s) => s.id === id) || null; }
+  function statusColor(kind, id) { const s = statusById(kind, id); return s ? s.c : "150,153,163"; }
+  function statusName(kind, id) { const s = statusById(kind, id); return s ? s.name : "без статуса"; }
+  function statusIsDone(kind, id) { const s = statusById(kind, id); return !!(s && s.done); }
+  function defaultFilterIds(kind) { return statusSet(kind).filter((s) => !s.done).map((s) => s.id); }
+  function statusOf(t) { if (t.status && statusById("task", t.status)) return t.status; if (t.is_done) return "done"; return "progress"; }
+  function statusDot(kind, id, lg) { return `<span class="status-dot${lg ? " status-dot--lg" : ""}" style="--c:${statusColor(kind, id)}"></span>`; }
+  function statusPill(kind, id) { return `<span class="status-pill" style="--c:${statusColor(kind, id)}"><span>${esc(statusName(kind, id))}</span>${statusDot(kind, id)}</span>`; }
+  let _statusLoading = null;
+  function loadStatuses() {
+    if (_statusLoading) return _statusLoading;
+    _statusLoading = Promise.all([Store.statuses("task"), Store.statuses("project")]).then(([t, p]) => { taskStatusesCache = t.slice().sort(byOrd); projStatusesCache = p.slice().sort(byOrd); _statusLoading = null; }, (e) => { _statusLoading = null; throw e; });
+    return _statusLoading;
+  }
 
   /* Проекты */
   const DEFAULT_PROJECTS = [{ emoji: "🧶", name: "Жизнь" }, { emoji: "🔨", name: "Работа" }];
@@ -41,13 +55,13 @@
   function projById(id) { return id ? projectsCache.find((p) => p.id === id) || null : null; }
   function projEmoji(p) { return (p && p.emoji) ? p.emoji : DEFAULT_EMOJI; }
   function projPillInner(p) { return `<span class="proj-emoji">${p ? projEmoji(p) : DEFAULT_EMOJI}</span><span class="proj-name">${p ? esc(p.name) : "проект"}</span>`; }
-  function projStatusOf(p) { return p && SMAP[p.status] ? p.status : "progress"; }
+  function projStatusOf(p) { return p && p.status && statusById("project", p.status) ? p.status : "progress"; }
   const projCmpNewest = (a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")) || String(b.id).localeCompare(String(a.id));
   function orderedProjects() {
     const byStatus = {};
     projectsCache.forEach((p) => { const st = projStatusOf(p); (byStatus[st] = byStatus[st] || []).push(p); });
     const out = [];
-    STATUSES.forEach((s) => { const arr = byStatus[s.key]; if (arr) { arr.sort(projCmpNewest); out.push(...arr); } });
+    statusSet("project").forEach((s) => { const arr = byStatus[s.id]; if (arr) { arr.sort(projCmpNewest); out.push(...arr); } });
     return out;
   }
   let _projLoading = null;
@@ -72,6 +86,9 @@
       d.tasks.forEach((t) => { if (!t.id) t.id = uid(); if (!t.status) t.status = t.is_done ? "done" : "progress"; if ("tag" in t) delete t.tag; });
       if (!d.projectsV1) { d.projects = DEFAULT_PROJECTS.map((p) => ({ id: uid(), emoji: p.emoji, name: p.name, status: "progress" })); d.projectsV1 = true; delete d.tags; delete d.tagsV2; }
       d.projects = d.projects || [];
+      if (!d.statusesV1) { d.taskStatuses = seedStatuses(); d.projectStatuses = seedStatuses(); d.statusesV1 = true; }
+      d.taskStatuses = d.taskStatuses || seedStatuses();
+      d.projectStatuses = d.projectStatuses || seedStatuses();
       d.settings = d.settings || { theme: "dark", count: 5 };
       this.write(d); return d;
     },
@@ -101,6 +118,37 @@
     },
     async updateProject(id, fields) { if (sb && this.userId) { await sb.from("projects").update(fields).eq("id", id); return; } const d = Local.ensure(); const p = d.projects.find((x) => x.id === id); if (p) Object.assign(p, fields); Local.write(d); },
     async deleteProject(id) { if (sb && this.userId) { await sb.from("tasks").update({ project_id: null }).eq("project_id", id); await sb.from("projects").delete().eq("id", id); return; } const d = Local.ensure(); d.tasks.forEach((t) => { if (t.project_id === id) t.project_id = null; }); d.projects = d.projects.filter((x) => x.id !== id); Local.write(d); },
+    async statuses(kind) {
+      if (sb && this.userId) {
+        const { data } = await sb.from("statuses").select("*").eq("user_id", this.userId).eq("kind", kind).order("ord");
+        if (!data || !data.length) { const rows = seedStatuses().map((s) => ({ ...s, user_id: this.userId, kind })); try { await sb.from("statuses").upsert(rows, { onConflict: "user_id,kind,id" }); } catch {} return seedStatuses(); }
+        return data.map((s) => ({ id: s.id, name: s.name, c: s.c, ord: s.ord, done: !!s.done, builtin: !!s.builtin }));
+      }
+      const d = Local.ensure(); return (kind === "project" ? d.projectStatuses : d.taskStatuses).slice();
+    },
+    async addStatus(kind, { name, c }) {
+      const set = kind === "project" ? projStatusesCache : taskStatusesCache;
+      const nonDoneMax = set.filter((s) => !s.done).reduce((m, s) => Math.max(m, s.ord || 0), -1);
+      const row = { id: uid(), name: name || "Без названия", c: c || STATUS_PALETTE[0], ord: nonDoneMax + 1, done: false, builtin: false };
+      if (sb && this.userId) { const { data } = await sb.from("statuses").insert({ ...row, user_id: this.userId, kind }).select().single(); return data ? { id: data.id, name: data.name, c: data.c, ord: data.ord, done: !!data.done, builtin: false } : row; }
+      const d = Local.ensure(); (kind === "project" ? d.projectStatuses : d.taskStatuses).push(row); Local.write(d); return row;
+    },
+    async updateStatus(kind, id, fields) {
+      if (sb && this.userId) { await sb.from("statuses").update(fields).eq("user_id", this.userId).eq("kind", kind).eq("id", id); return; }
+      const d = Local.ensure(); const arr = kind === "project" ? d.projectStatuses : d.taskStatuses; const s = arr.find((x) => x.id === id); if (s) Object.assign(s, fields); Local.write(d);
+    },
+    async deleteStatus(kind, id) {
+      if (sb && this.userId) {
+        if (kind === "project") await sb.from("projects").update({ status: "none" }).eq("user_id", this.userId).eq("status", id);
+        else await sb.from("tasks").update({ status: "none" }).eq("user_id", this.userId).eq("status", id);
+        await sb.from("statuses").delete().eq("user_id", this.userId).eq("kind", kind).eq("id", id); return;
+      }
+      const d = Local.ensure();
+      if (kind === "project") d.projects.forEach((p) => { if (p.status === id) p.status = "none"; });
+      else d.tasks.forEach((t) => { if (t.status === id) t.status = "none"; });
+      const key = kind === "project" ? "projectStatuses" : "taskStatuses";
+      d[key] = d[key].filter((x) => x.id !== id); Local.write(d);
+    },
     async settings() { if (sb && this.userId) { const { data } = await sb.from("settings").select("*").eq("user_id", this.userId).single(); return data || { theme: "dark", count: 5 }; } return Local.ensure().settings; },
     async saveSettings(s) { if (sb && this.userId) { await sb.from("settings").upsert({ user_id: this.userId, ...s }); return; } const d = Local.ensure(); d.settings = { ...d.settings, ...s }; Local.write(d); },
   };
@@ -168,15 +216,48 @@
   $("#datetime-modal").addEventListener("click", (e) => { if (e.target.id === "datetime-modal") $("#datetime-modal").hidden = true; });
   $("#dt-done").addEventListener("click", () => { $("#datetime-modal").hidden = true; if (dt.onDone) dt.onDone(dt.date, $("#dt-time").value, !$("#dt-notify").classList.contains("off")); });
 
-  /* ---------- Статус (одиночный) ---------- */
-  let statusOnPick = null;
-  function openStatusPicker(current, onPick) {
-    statusOnPick = onPick;
-    $("#status-list").innerHTML = STATUSES.map((s) => `<button type="button" class="status-pill ${s.key === current ? "is-cur" : ""}" data-k="${s.key}" style="--c:${s.c}"><span>${s.name}</span>${statusDot(s.key)}</button>`).join("");
-    $$("#status-list .status-pill").forEach((b) => b.addEventListener("click", () => { $("#status-modal").hidden = true; if (statusOnPick) statusOnPick(b.dataset.k); }));
-    $("#status-modal").hidden = false;
+  /* ---------- Статус: пикер (одиночный) + создание/удаление кастомных ---------- */
+  function statusAddBtn() { return `<button type="button" class="status-add" aria-label="Новый статус"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 6.5v11M6.5 12h11"/></svg></button>`; }
+  function statusPillHTML(kind, s, selected, off) {
+    const del = s.builtin ? "" : `<span class="status-del" data-del="${s.id}" aria-label="Удалить">×</span>`;
+    return `<button type="button" class="status-pill ${selected ? "is-cur" : ""} ${off ? "off" : ""}" data-k="${s.id}" style="--c:${s.c}"><span>${esc(s.name)}</span>${statusDot(kind, s.id)}${del}</button>`;
   }
+  async function deleteCustomStatus(kind, id, after) {
+    if (!(await askConfirm("Удалить статус? Элементы с ним станут «без статуса»."))) return;
+    await Store.deleteStatus(kind, id); await loadStatuses();
+    if (after) after();
+    if (currentView === "projects") renderKanban(); else if (currentView === "project") renderProjectTasks();
+  }
+  let statusPickKind = "task", statusPickCurrent = null, statusOnPick = null;
+  function renderStatusPickList() {
+    const kind = statusPickKind;
+    $("#status-list").innerHTML = statusAddBtn() + statusSet(kind).map((s) => statusPillHTML(kind, s, s.id === statusPickCurrent, false)).join("");
+    $("#status-list .status-add").addEventListener("click", () => openStatusForm(kind, (newId) => { if (newId) { $("#status-modal").hidden = true; if (statusOnPick) statusOnPick(newId); } else renderStatusPickList(); }));
+    $$("#status-list .status-pill").forEach((b) => b.addEventListener("click", (e) => {
+      const del = e.target.closest(".status-del");
+      if (del) { deleteCustomStatus(kind, del.dataset.del, renderStatusPickList); return; }
+      $("#status-modal").hidden = true; if (statusOnPick) statusOnPick(b.dataset.k);
+    }));
+  }
+  function openStatusPicker(kind, current, onPick) { statusPickKind = kind; statusPickCurrent = current; statusOnPick = onPick; renderStatusPickList(); $("#status-modal").hidden = false; }
   $("#status-modal").addEventListener("click", (e) => { if (e.target.id === "status-modal") $("#status-modal").hidden = true; });
+
+  /* Форма создания статуса */
+  let statusFormKind = "task", statusFormColor = STATUS_PALETTE[0], statusFormOnCreate = null;
+  function renderStatusSwatches() {
+    $("#statusform-swatches").innerHTML = STATUS_PALETTE.map((c) => `<button type="button" class="swatch ${c === statusFormColor ? "is-cur" : ""}" data-c="${c}" style="--c:${c}"><span class="status-dot"></span></button>`).join("");
+    $$("#statusform-swatches .swatch").forEach((b) => b.addEventListener("click", () => { statusFormColor = b.dataset.c; renderStatusSwatches(); }));
+  }
+  function openStatusForm(kind, onCreate) { statusFormKind = kind; statusFormColor = STATUS_PALETTE[0]; statusFormOnCreate = onCreate; $("#statusform-name").value = ""; renderStatusSwatches(); $("#statusform-modal").hidden = false; setTimeout(() => $("#statusform-name").focus(), 30); }
+  $("#statusform-ok").addEventListener("click", async () => {
+    const name = ($("#statusform-name").value || "").trim(); if (!name) { $("#statusform-name").focus(); return; }
+    const row = await Store.addStatus(statusFormKind, { name, c: statusFormColor }); await loadStatuses();
+    if (statusFormKind === "task" && row) { filterStatuses.add(row.id); pFilterStatuses.add(row.id); saveFilters(); }
+    $("#statusform-modal").hidden = true;
+    if (statusFormOnCreate) statusFormOnCreate(row ? row.id : null);
+  });
+  $("#statusform-cancel").addEventListener("click", () => ($("#statusform-modal").hidden = true));
+  $("#statusform-modal").addEventListener("click", (e) => { if (e.target.id === "statusform-modal") $("#statusform-modal").hidden = true; });
 
   /* ---------- Проекты: выбор (одиночный) и фильтр (множественный) ---------- */
   let projMode = "single", projCurrent = null, projOnPick = null;
@@ -238,6 +319,7 @@
   $("#projform-modal").addEventListener("click", (e) => { if (e.target.id === "projform-modal") $("#projform-modal").hidden = true; });
 
   /* ---------- Чек-листы в contenteditable ---------- */
+  const CHK_TRIG = /^\[\]\s/;
   function initChecklist(el) {
     el.addEventListener("beforeinput", (e) => {
       if (e.inputType === "insertParagraph") {
@@ -251,33 +333,33 @@
     });
     el.addEventListener("input", (e) => { if (e.isComposing) return; maybeMakeChecklist(el); });
     el.addEventListener("click", (e) => {
-      const box = e.target.closest(".chk-box"); if (!box) return;
-      const blk = box.closest(".chk"); if (!blk) return;
-      const on = blk.getAttribute("data-checked") === "1";
-      blk.setAttribute("data-checked", on ? "0" : "1"); blk.classList.toggle("is-done", !on);
+      const blk = e.target.closest(".chk"); if (!blk) return;
+      const rect = blk.getBoundingClientRect();
+      if (e.clientX - rect.left <= 26) {
+        const on = blk.getAttribute("data-checked") === "1";
+        blk.setAttribute("data-checked", on ? "0" : "1"); blk.classList.toggle("is-done", !on);
+      }
     });
   }
   function currentBlock(el) { const sel = window.getSelection(); if (!sel.rangeCount) return null; let n = sel.anchorNode; if (!n || n === el) return null; while (n && n.parentNode !== el) n = n.parentNode; if (!n || n.parentNode !== el) return null; return n.nodeType === 1 ? n : null; }
   function placeCaretAtStart(node) { const sel = window.getSelection(); const r = document.createRange(); r.setStart(node, 0); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); }
-  function placeCaretInText(span, offset) { const sel = window.getSelection(); const r = document.createRange(); let tn = span.firstChild; if (!tn) { tn = document.createTextNode(""); span.appendChild(tn); } r.setStart(tn, Math.min(offset, tn.textContent.length)); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); }
+  function placeCaretEnd(node) { const sel = window.getSelection(); const r = document.createRange(); r.selectNodeContents(node); r.collapse(false); sel.removeAllRanges(); sel.addRange(r); }
   function makeChk(blk, rest, checked) {
     blk.className = "chk" + (checked ? " is-done" : ""); blk.setAttribute("data-checked", checked ? "1" : "0");
-    blk.innerHTML = `<span class="chk-box" contenteditable="false"></span><span class="chk-text"></span>`;
-    blk.querySelector(".chk-text").textContent = rest || "";
+    blk.textContent = rest || "";
   }
-  const CHK_TRIG = /^\[\]\s/;
   function maybeMakeChecklist(el) {
     const sel = window.getSelection(); if (!sel.rangeCount) return;
     const blk = currentBlock(el);
     if (blk) {
       if (blk.classList.contains("chk")) return;
       const txt = blk.textContent;
-      if (CHK_TRIG.test(txt)) { const rest = txt.replace(CHK_TRIG, ""); makeChk(blk, rest, false); placeCaretInText(blk.querySelector(".chk-text"), rest.length); }
+      if (CHK_TRIG.test(txt)) { makeChk(blk, txt.replace(CHK_TRIG, ""), false); placeCaretEnd(blk); }
     } else {
       const node = sel.anchorNode;
       if (node && node.nodeType === 3 && node.parentNode === el && CHK_TRIG.test(node.textContent)) {
         const div = document.createElement("div"); el.insertBefore(div, node); const rest = node.textContent.replace(CHK_TRIG, ""); node.remove();
-        makeChk(div, rest, false); placeCaretInText(div.querySelector(".chk-text"), rest.length);
+        makeChk(div, rest, false); placeCaretEnd(div);
       }
     }
   }
@@ -285,8 +367,8 @@
     const lines = [];
     el.childNodes.forEach((node) => {
       if (node.nodeType === 1 && node.classList && node.classList.contains("chk")) {
-        const checked = node.getAttribute("data-checked") === "1"; const t = node.querySelector(".chk-text");
-        lines.push((checked ? "[x] " : "[] ") + (t ? t.textContent : ""));
+        const checked = node.getAttribute("data-checked") === "1";
+        lines.push((checked ? "[x] " : "[] ") + node.textContent);
       } else if (node.nodeType === 1 && node.tagName === "DIV") { lines.push(node.textContent); }
       else if (node.nodeType === 3) { lines.push(node.textContent); }
       else if (node.nodeType === 1 && node.tagName === "BR") { lines.push(""); }
@@ -334,11 +416,11 @@
   })();
 
   /* ---------- Фильтры ---------- */
-  let dateFilter = "", filterProjects = new Set(), filterStatuses = new Set(DEFAULT_STATUSES), taskCount = 5, tasksById = {};
+  let dateFilter = "", filterProjects = new Set(), filterStatuses = new Set(defaultFilterIds("task")), taskCount = 5, tasksById = {};
   const FKEY = "gunco_filters";
   function saveFilters() { try { localStorage.setItem(FKEY, JSON.stringify({ dateFilter, projects: [...filterProjects], statuses: [...filterStatuses] })); } catch {} }
-  function loadFilters() { try { const f = JSON.parse(localStorage.getItem(FKEY)) || {}; dateFilter = f.dateFilter || ""; filterProjects = new Set(f.projects || []); filterStatuses = new Set(f.statuses || DEFAULT_STATUSES); } catch {} }
-  function isDefaultStatuses() { return filterStatuses.size === DEFAULT_STATUSES.length && DEFAULT_STATUSES.every((k) => filterStatuses.has(k)); }
+  function loadFilters() { try { const f = JSON.parse(localStorage.getItem(FKEY)) || {}; dateFilter = f.dateFilter || ""; filterProjects = new Set(f.projects || []); filterStatuses = new Set(f.statuses || defaultFilterIds("task")); } catch {} }
+  function isDefaultStatuses() { const def = defaultFilterIds("task"); return filterStatuses.size === def.length && def.every((k) => filterStatuses.has(k)); }
   function applyFiltersUI() {
     $("#date-filter-label").textContent = dateFilter ? fmtFull(dateFilter) : "все дни";
     $("#date-filter").classList.toggle("is-set", !!dateFilter);
@@ -357,7 +439,7 @@
     return `<div class="task swipeable" data-id="${t.id}">
       <div class="swipe-del">${TRASH_SVG}</div>
       <div class="swipe-row">
-        <button class="row-status" data-act="status" aria-label="Статус">${statusDot(st, true)}</button>
+        <button class="row-status" data-act="status" aria-label="Статус">${statusDot("task", st, true)}</button>
         <span class="task-title">${esc(t.title)}</span>
         ${projCell}${dateCell}
         <button class="task-time" data-act="time">${t.due_time ? esc(t.due_time) : "—"}</button>
@@ -384,7 +466,7 @@
     $("#task-list").innerHTML = buildGroupedTaskListHTML(shown, { showProjectPill: true });
     $$("#task-list .task").forEach((el) => attachSwipe(el, async () => { await Store.deleteTask(el.dataset.id); renderTasks(); }));
   }
-  let projTasksById = {}, pFilterStatuses = new Set(DEFAULT_STATUSES), pDateFilter = "";
+  let projTasksById = {}, pFilterStatuses = new Set(defaultFilterIds("task")), pDateFilter = "";
   async function renderProjectTasks() {
     if (!editingProjectId) { projTasksById = {}; $("#p-task-list").innerHTML = ""; $("#p-tasks-empty").hidden = true; return; }
     let tasks = await Store.tasks();
@@ -396,7 +478,7 @@
     $("#p-task-list").innerHTML = buildFlatTaskListHTML(tasks, { showDate: true });
     $$("#p-task-list .task").forEach((el) => attachSwipe(el, async () => { await Store.deleteTask(el.dataset.id); renderProjectTasks(); }));
   }
-  function isDefaultStatusSet(set) { return set.size === DEFAULT_STATUSES.length && DEFAULT_STATUSES.every((k) => set.has(k)); }
+  function isDefaultStatusSet(set) { const def = defaultFilterIds("task"); return set.size === def.length && def.every((k) => set.has(k)); }
   function applyProjFiltersUI() {
     $("#p-date-filter-label").textContent = pDateFilter ? fmtFull(pDateFilter) : "все дни";
     $("#p-date-filter").classList.toggle("is-set", !!pDateFilter);
@@ -411,7 +493,7 @@
       if (justSwiped) return;
       const el = e.target.closest(".task"); if (!el) return; const t = getMap()[el.dataset.id]; if (!t) return;
       const hit = e.target.closest("[data-act]"); const act = hit ? hit.dataset.act : null;
-      if (act === "status") { openStatusPicker(statusOf(t), async (k) => { await Store.updateTask(t.id, { status: k, is_done: k === "done" }); onChange(); }); return; }
+      if (act === "status") { openStatusPicker("task", statusOf(t), async (k) => { await Store.updateTask(t.id, { status: k, is_done: statusIsDone("task", k) }); onChange(); }); return; }
       if (act === "project") { openProjectPicker(t.project_id || null, async (id) => { await Store.updateTask(t.id, { project_id: id }); onChange(); }); return; }
       if (act === "time") { openDateTime({ date: t.due_date, time: t.due_time, notify: t.notify !== false, onDone: async (date, time, notify) => { await updateTaskDateTime(t.id, date, time, notify); onChange(); } }); return; }
       openTaskEdit(t, returnView);
@@ -428,8 +510,13 @@
 
   let sfSet = null, sfOnChange = null;
   function renderStatusFilterList() {
-    $("#statusfilter-list").innerHTML = STATUSES.map((s) => `<button type="button" class="status-pill ${sfSet && sfSet.has(s.key) ? "" : "off"}" data-k="${s.key}" style="--c:${s.c}"><span>${s.name}</span>${statusDot(s.key)}</button>`).join("");
-    $$("#statusfilter-list .status-pill").forEach((b) => b.addEventListener("click", () => { const k = b.dataset.k; sfSet.has(k) ? sfSet.delete(k) : sfSet.add(k); renderStatusFilterList(); if (sfOnChange) sfOnChange(); }));
+    $("#statusfilter-list").innerHTML = statusAddBtn() + statusSet("task").map((s) => statusPillHTML("task", s, false, !(sfSet && sfSet.has(s.id)))).join("");
+    $("#statusfilter-list .status-add").addEventListener("click", () => openStatusForm("task", (newId) => { if (newId && sfSet) sfSet.add(newId); renderStatusFilterList(); if (sfOnChange) sfOnChange(); }));
+    $$("#statusfilter-list .status-pill").forEach((b) => b.addEventListener("click", (e) => {
+      const del = e.target.closest(".status-del");
+      if (del) { const id = del.dataset.del; deleteCustomStatus("task", id, () => { sfSet && sfSet.delete(id); renderStatusFilterList(); if (sfOnChange) sfOnChange(); }); return; }
+      const k = b.dataset.k; sfSet.has(k) ? sfSet.delete(k) : sfSet.add(k); renderStatusFilterList(); if (sfOnChange) sfOnChange();
+    }));
   }
   function openStatusFilterModal(set, onChange) { sfSet = set; sfOnChange = onChange; renderStatusFilterList(); $("#statusfilter-modal").hidden = false; }
   $("#status-filter").addEventListener("click", () => openStatusFilterModal(filterStatuses, () => { applyFiltersUI(); saveFilters(); renderTasks(); }));
@@ -448,20 +535,20 @@
     $("#t-date").textContent = cardDate ? fmtFull(cardDate) : "дата";
     $("#t-time").value = cardTime || "";
     $("#t-notify").innerHTML = cardNotify ? BELL_ON : BELL_OFF; $("#t-notify").classList.toggle("off", !cardNotify);
-    $("#t-status").innerHTML = statusPill(cardStatus);
+    $("#t-status").innerHTML = statusPill("task", cardStatus);
     const p = projById(cardProjectId);
     $("#t-project").innerHTML = projPillInner(p); $("#t-project").classList.toggle("is-empty", !p);
   }
   function taskFields() {
     let remind_at = null; if (cardNotify && cardDate && cardTime) { const d = new Date(`${cardDate}T${cardTime}:00`); if (!isNaN(d)) remind_at = d.toISOString(); }
-    return { title: $("#t-title").textContent.trim(), description: descToText($("#t-desc")), due_date: cardDate || null, due_time: cardTime || null, notify: cardNotify, project_id: cardProjectId || null, status: cardStatus, is_done: cardStatus === "done", remind_at, notified: false };
+    return { title: $("#t-title").textContent.trim(), description: descToText($("#t-desc")), due_date: cardDate || null, due_time: cardTime || null, notify: cardNotify, project_id: cardProjectId || null, status: cardStatus, is_done: statusIsDone("task", cardStatus), remind_at, notified: false };
   }
   async function saveTaskDraft() { if (editingTaskId) await Store.updateTask(editingTaskId, taskFields()); }
   const saveTaskDebounced = debounce(saveTaskDraft, 400);
   $("#t-date").addEventListener("click", () => openCalendar({ value: cardDate, onPick: (v) => { cardDate = v; taskTouched = true; renderCardMeta(); saveTaskDraft(); } }));
   $("#t-time").addEventListener("input", (e) => { cardTime = e.target.value; taskTouched = true; saveTaskDraft(); });
   $("#t-notify").addEventListener("click", () => { cardNotify = !cardNotify; taskTouched = true; renderCardMeta(); saveTaskDraft(); });
-  $("#t-status").addEventListener("click", () => openStatusPicker(cardStatus, (k) => { cardStatus = k; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
+  $("#t-status").addEventListener("click", () => openStatusPicker("task", cardStatus, (k) => { cardStatus = k; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
   $("#t-project").addEventListener("click", () => openProjectPicker(cardProjectId, (id) => { cardProjectId = id; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
   $("#t-title").addEventListener("input", () => { taskTouched = true; saveTaskDebounced(); });
   $("#t-desc").addEventListener("input", () => { taskTouched = true; saveTaskDebounced(); });
@@ -496,8 +583,8 @@
   /* ---------- Канбан проектов ---------- */
   function projBadges(pid, tasks) {
     const counts = {};
-    tasks.forEach((t) => { if (t.project_id === pid) { const s = statusOf(t); if (s !== "done") counts[s] = (counts[s] || 0) + 1; } });
-    return STATUSES.filter((s) => s.key !== "done" && counts[s.key]).map((s) => ({ c: s.c, count: counts[s.key] }));
+    tasks.forEach((t) => { if (t.project_id === pid) { const s = statusOf(t); if (!statusIsDone("task", s)) counts[s] = (counts[s] || 0) + 1; } });
+    return statusSet("task").filter((s) => !s.done && counts[s.id]).map((s) => ({ c: s.c, count: counts[s.id] }));
   }
   function kanbanCard(p, tasks) {
     const badges = projBadges(p.id, tasks);
@@ -516,7 +603,7 @@
     projectsCache.forEach((p) => { const st = projStatusOf(p); (byStatus[st] = byStatus[st] || []).push(p); });
     Object.values(byStatus).forEach((arr) => arr.sort(projCmpNewest));
     let html = "";
-    STATUSES.forEach((s) => { const arr = byStatus[s.key]; if (!arr || !arr.length) return; html += `<div class="kb-col"><div class="kb-col-head">${statusDot(s.key)}<span>${s.name}</span></div><div class="kb-cards scroll">${arr.map((p) => kanbanCard(p, tasks)).join("")}</div></div>`; });
+    statusSet("project").forEach((s) => { const arr = byStatus[s.id]; if (!arr || !arr.length) return; html += `<div class="kb-col"><div class="kb-col-head">${statusDot("project", s.id)}<span>${esc(s.name)}</span></div><div class="kb-cards scroll">${arr.map((p) => kanbanCard(p, tasks)).join("")}</div></div>`; });
     $("#kanban").innerHTML = html || `<p class="empty kb-empty">нет проектов — создай первый по +</p>`;
   }
   $("#kanban").addEventListener("click", (e) => {
@@ -528,7 +615,7 @@
   let editingProjectId = null, pEmoji = "", pStatus = "progress", pStart = null, pEnd = null, projTouched = false;
   function renderProjectMeta() {
     $("#p-emoji").textContent = pEmoji || DEFAULT_EMOJI; $("#p-emoji").classList.toggle("is-empty", !pEmoji);
-    $("#p-status").innerHTML = statusPill(pStatus);
+    $("#p-status").innerHTML = statusPill("project", pStatus);
     $("#p-start").textContent = pStart ? fmtFull(pStart) : "дата начала"; $("#p-start").classList.toggle("is-empty", !pStart);
     $("#p-end").textContent = pEnd ? fmtFull(pEnd) : "дата окончания"; $("#p-end").classList.toggle("is-empty", !pEnd);
   }
@@ -536,7 +623,7 @@
   async function saveProjectDraft() { if (!editingProjectId) return; const f = projectFields(); await Store.updateProject(editingProjectId, f); const i = projectsCache.findIndex((p) => p.id === editingProjectId); if (i >= 0) projectsCache[i] = { ...projectsCache[i], ...f }; }
   const saveProjectDebounced = debounce(saveProjectDraft, 400);
   $("#p-emoji").addEventListener("click", () => openEmojiModal(pEmoji, (em) => { pEmoji = em; projTouched = true; renderProjectMeta(); saveProjectDraft(); }));
-  $("#p-status").addEventListener("click", () => openStatusPicker(pStatus, (k) => { pStatus = k; projTouched = true; renderProjectMeta(); saveProjectDraft(); }));
+  $("#p-status").addEventListener("click", () => openStatusPicker("project", pStatus, (k) => { pStatus = k; projTouched = true; renderProjectMeta(); saveProjectDraft(); }));
   $("#p-start").addEventListener("click", () => openCalendar({ value: pStart || todayStr(), onPick: (v) => { pStart = v; projTouched = true; renderProjectMeta(); saveProjectDraft(); } }));
   $("#p-end").addEventListener("click", () => openCalendar({ value: pEnd || todayStr(), onPick: (v) => { pEnd = v; projTouched = true; renderProjectMeta(); saveProjectDraft(); } }));
   $("#p-title").addEventListener("input", () => { projTouched = true; saveProjectDebounced(); });
@@ -549,14 +636,14 @@
     const draft = await Store.addProject(projectFields()); editingProjectId = draft.id;
     if (!projectsCache.some((p) => p.id === draft.id)) projectsCache.push(draft);
     $("#p-submit").textContent = "Готово"; $("#p-delete").hidden = false;
-    pFilterStatuses = new Set(DEFAULT_STATUSES); pDateFilter = ""; applyProjFiltersUI();
+    pFilterStatuses = new Set(defaultFilterIds("task")); pDateFilter = ""; applyProjFiltersUI();
     renderProjectTasks(); showView("project"); $("#p-title").focus();
   }
   function openProjectEdit(p) {
     editingProjectId = p.id; pEmoji = p.emoji || ""; pStatus = projStatusOf(p); pStart = p.start_date || null; pEnd = p.end_date || null; projTouched = true;
     $("#p-title").innerText = p.name || ""; textToDesc($("#p-desc"), p.description || ""); renderProjectMeta();
     $("#p-submit").textContent = "Готово"; $("#p-delete").hidden = false;
-    pFilterStatuses = new Set(DEFAULT_STATUSES); pDateFilter = ""; applyProjFiltersUI();
+    pFilterStatuses = new Set(defaultFilterIds("task")); pDateFilter = ""; applyProjFiltersUI();
     renderProjectTasks(); showView("project");
   }
   async function leaveProject() {
@@ -578,7 +665,7 @@
     let email = ""; try { const { data } = await sb.auth.getUser(); email = data && data.user && data.user.email; } catch {}
     $("#account-email").textContent = email || "аккаунт"; updateNotifBtn(); pop.hidden = false;
   });
-  $("#account-signout").addEventListener("click", async () => { $("#account-pop").hidden = true; if (sb) await sb.auth.signOut(); Store.userId = null; hasStarted = false; projectsCache = []; _projLoading = null; showAuth(); });
+  $("#account-signout").addEventListener("click", async () => { $("#account-pop").hidden = true; if (sb) await sb.auth.signOut(); Store.userId = null; hasStarted = false; projectsCache = []; _projLoading = null; taskStatusesCache = seedStatuses(); projStatusesCache = seedStatuses(); _statusLoading = null; showAuth(); });
   document.addEventListener("click", (e) => { if (!$("#account-pop").hidden && !e.target.closest("#account-pop") && !e.target.closest("#account-btn")) $("#account-pop").hidden = true; });
 
   /* ---------- Пуш-уведомления ---------- */
@@ -615,6 +702,7 @@
     const s = await Store.settings();
     taskCount = s.count || 5; slider.value = Math.min(taskCount, 9); sliderVal.value = taskCount;
     document.documentElement.setAttribute("data-theme", s.theme || "dark");
+    await loadStatuses();
     await loadProjects();
     loadFilters(); applyFiltersUI(); renderCardMeta(); showView("tasks");
   }
