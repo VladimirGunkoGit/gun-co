@@ -1,5 +1,5 @@
 /* gun.co service worker — офлайн-кэш оболочки */
-const CACHE = "gunco-v57";
+const CACHE = "gunco-v59";
 const ASSETS = [
   "./",
   "./index.html",
@@ -29,16 +29,23 @@ self.addEventListener("push", (e) => {
     body: d.body || "",
     icon: "./icons/icon-192.png",
     badge: "./icons/icon-192.png",
-    data: { url: d.url || "./" },
+    data: { url: d.url || "./", taskId: d.taskId || null },
   }));
 });
 
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
-  const url = (e.notification.data && e.notification.data.url) || "./";
+  const data = e.notification.data || {};
+  const taskId = data.taskId || null;
+  const url = data.url || "./";
   e.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-      for (const c of list) { if ("focus" in c) return c.focus(); }
+      for (const c of list) {
+        if ("focus" in c) {
+          if (taskId) c.postMessage({ type: "open-task", taskId });
+          return c.focus();
+        }
+      }
       if (self.clients.openWindow) return self.clients.openWindow(url);
     })
   );

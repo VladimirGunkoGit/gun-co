@@ -473,7 +473,7 @@
     $("#back-btn").hidden = !isForm;
     $("#page-nav").hidden = isForm;
     $("#fab").hidden = !(name === "tasks" || name === "projects" || name === "notes");
-    if (!isForm) $$("#page-nav .nav-item").forEach((b) => { const on = b.dataset.view === name; b.classList.toggle("active", on); if (on) b.scrollIntoView({ inline: "nearest", block: "nearest" }); });
+    if (!isForm) { let activeItem = null; $$("#page-nav .nav-item").forEach((b) => { const on = b.dataset.view === name; b.classList.toggle("active", on); if (on) activeItem = b; }); if (activeItem) requestAnimationFrame(() => activeItem.scrollIntoView({ inline: "nearest", block: "nearest" })); }
     if (name === "tasks") renderTasks();
     else if (name === "projects") renderKanban();
     else if (name === "project") renderProjectTasks();
@@ -640,6 +640,14 @@
     $("#t-title").innerText = t.title || ""; descLoad($("#t-desc"), t.description || ""); renderCardMeta();
     $("#t-submit").textContent = "Готово"; $("#t-delete").hidden = false;
     showView("task");
+  }
+  // Открыть карточку задачи по id (из клика по пуш-уведомлению)
+  async function openTaskById(id) {
+    if (!id || !hasStarted) return;
+    if (editingTaskId && editingTaskId !== id) await leaveTask();
+    const tasks = await Store.tasks();
+    const t = tasks.find((x) => x.id === id);
+    if (t) openTaskEdit(t, "tasks");
   }
   async function leaveTask() {
     if (editingTaskId) {
@@ -833,6 +841,9 @@
     await loadStatuses();
     await loadProjects();
     loadFilters(); applyFiltersUI(); renderCardMeta(); showView("tasks");
+    // если приложение открыто из пуш-уведомления (?task=<id>) — раскрыть карточку
+    const tid = new URLSearchParams(location.search).get("task");
+    if (tid) { history.replaceState(null, "", location.pathname); openTaskById(tid); }
   }
   function showAuth() { $("#app").hidden = true; $("#auth").hidden = false; $("#account-pop").hidden = true; $("#auth-forgot").hidden = !HAS_SUPABASE; $("#auth-mode-hint").textContent = HAS_SUPABASE ? "Данные синхронизируются между устройствами." : "Локальный режим: данные хранятся в этом браузере."; $("#auth-google").disabled = !HAS_SUPABASE; }
 
@@ -851,5 +862,11 @@
     startApp();
   }
 
-  if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+    // клик по пуш-уведомлению у уже открытого приложения → раскрыть карточку задачи
+    navigator.serviceWorker.addEventListener("message", (e) => {
+      if (e.data && e.data.type === "open-task") openTaskById(e.data.taskId);
+    });
+  }
 })();

@@ -144,7 +144,7 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .auth-forgot{ background:transparent; border:none; color:var(--muted); font-size:var(--fs-body); padding:2px; text-decoration:underline; }
 
 /* ПРИЛОЖЕНИЕ */
-.app{ height:100%; display:flex; flex-direction:column; padding-left:var(--safe-left); padding-right:var(--safe-right); }
+.app{ position:relative; height:100%; display:flex; flex-direction:column; padding-left:var(--safe-left); padding-right:var(--safe-right); }
 .topbar{ display:flex; align-items:center; justify-content:space-between; padding:calc(var(--safe-top) + 12px) 18px 6px; flex:none; }
 .topbar-actions{ display:flex; gap:0; }
 .subhead{ display:flex; align-items:flex-end; gap:6px; padding:16px 18px 10px; flex:none; min-height:44px; }
@@ -281,7 +281,7 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 /* Мобильная версия: меню переносим вниз экрана (десктоп/планшеты — сверху как было) */
 @media (max-width:767px){
   #page-nav{
-    position:fixed; left:0; right:0;
+    position:absolute; left:0; right:0;
     bottom:calc(var(--safe-bottom) + 10px);
     z-index:30;
     padding-left:18px; padding-right:28px;
