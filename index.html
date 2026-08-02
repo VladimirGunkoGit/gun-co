@@ -16,7 +16,7 @@
 <link rel="icon" type="image/svg+xml" href="icons/favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500&family=Unbounded:wght@500;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500;700;800&family=Unbounded:wght@500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -234,6 +234,18 @@
   </div>
 </div>
 
+<!-- Вставка ссылки -->
+<div id="link-modal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-title">ссылка</div>
+    <input id="link-url" class="field" type="url" placeholder="https://..." autocapitalize="off" autocorrect="off" spellcheck="false" />
+    <div class="form-actions">
+      <button id="link-ok" class="btn btn--solid" type="button">Вставить</button>
+      <button id="link-cancel" class="btn" type="button">Отмена</button>
+    </div>
+  </div>
+</div>
+
 <!-- Создание статуса -->
 <div id="statusform-modal" class="modal" hidden>
   <div class="modal-card">
@@ -279,6 +291,7 @@
 <div id="confirm-modal" class="modal" hidden>
   <div class="modal-card confirm-card">
     <div class="modal-title" id="confirm-text">Удалить?</div>
+    <div class="confirm-sub" id="confirm-sub" hidden></div>
     <div class="form-actions">
       <button id="confirm-yes" class="btn btn--solid" type="button">Да</button>
       <button id="confirm-no" class="btn" type="button">Отмена</button>

@@ -76,7 +76,7 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .emoji-cell.is-cur{ background:var(--inactive-bg); box-shadow:inset 0 0 0 1.5px var(--fg); }
 
 /* Канбан проектов */
-.kanban{ display:flex; align-items:flex-start; gap:14px; height:100%; overflow-x:auto; overflow-y:hidden; padding:0 18px 12px; -webkit-overflow-scrolling:touch; }
+.kanban{ display:flex; align-items:flex-start; gap:14px; height:100%; overflow-x:auto; overflow-y:hidden; padding:14px 18px 12px; -webkit-overflow-scrolling:touch; }
 .kanban::-webkit-scrollbar{ height:6px; }
 .kanban::-webkit-scrollbar-thumb{ background:var(--scroll); border-radius:3px; }
 .kb-col{ flex:0 0 190px; width:190px; max-height:100%; display:flex; flex-direction:column; min-height:0; }
@@ -102,7 +102,7 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .proj-add-task{ background:var(--inactive-bg); border:none; border-radius:5px; padding:6px 12px; font-size:var(--fs-body); color:var(--text-soft); margin-top:12px; }
 #p-task-list{ overflow:visible; flex:none; padding:0; }
 #p-desc{ margin-top:40px; }
-.task-date{ flex:none; min-width:42px; text-align:right; color:var(--muted); font-size:var(--fs-body); white-space:nowrap; background:transparent; border:none; padding:0; }
+.task-date{ flex:none; text-align:right; color:var(--muted); font-size:var(--fs-body); white-space:nowrap; text-transform:uppercase; letter-spacing:.02em; background:transparent; border:none; padding:0; }
 
 /* СТАТУСЫ — пилюля (имя + светящаяся точка справа) */
 .status-pill{ display:inline-flex; align-items:center; gap:8px; border:none; border-radius:5px; padding:3px 10px; font-size:var(--fs-body); line-height:1.15; white-space:nowrap; background:rgba(var(--c), .24); color:var(--fg); }
@@ -157,7 +157,7 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 /* Список задач */
 .pane{ padding:0 18px; display:flex; flex-direction:column; min-height:0; flex:1; }
 .pane-head-tools{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-start; margin-bottom:14px; }
-.task-list{ overflow-y:auto; flex:1; min-height:0; padding:0 4px 8px 0; -webkit-overflow-scrolling:touch; }
+.task-list{ overflow-y:auto; flex:1; min-height:0; padding:0 12px 8px 0; -webkit-overflow-scrolling:touch; }
 .day-group{ margin-bottom:16px; }
 .day-group:last-child{ margin-bottom:4px; }
 .day-head{ font-size:10px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; margin:0 0 6px; }
@@ -184,7 +184,7 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .slider::-moz-range-thumb{ width:15px; height:15px; border-radius:50%; background:var(--fg); border:none; }
 
 /* КАРТОЧКА задачи (создание/редактирование = вид готовой карточки) */
-.taskcard{ flex:1; min-height:0; overflow-y:auto; padding:8px 18px calc(var(--safe-bottom) + 20px); }
+.taskcard{ flex:1; min-height:0; overflow-y:auto; padding:8px 24px calc(var(--safe-bottom) + 20px) 18px; }
 .taskcard-title{ font-family:var(--font-title); font-size:var(--fs-title); font-weight:600; letter-spacing:.01em; outline:none; word-break:break-word; min-height:1.2em; }
 .taskcard-title:empty::before{ content:attr(data-placeholder); color:var(--muted); opacity:.4; }
 .taskcard-meta{ display:flex; align-items:center; gap:11px; flex-wrap:wrap; margin:16px 0 0; }
@@ -198,6 +198,8 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .meta-bell.off{ color:var(--muted); }
 .taskcard-desc{ margin-top:20px; outline:none; white-space:pre-wrap; word-break:break-word; font-size:15px; color:var(--text-soft); font-weight:300; min-height:2em; }
 .taskcard-desc:empty::before{ content:attr(data-placeholder); color:var(--muted); opacity:.5; }
+.taskcard-desc b, .taskcard-desc strong, .taskcard-title b, .taskcard-title strong{ font-weight:800; }
+.taskcard-desc a, .taskcard-title a{ color:inherit; text-decoration:underline; text-underline-offset:2px; }
 /* Чек-листы внутри текста */
 .taskcard-desc .chk{ position:relative; padding-left:28px; margin:5px 0 5px 26px; min-height:1.35em; }
 .taskcard-desc .chk::before{ content:""; position:absolute; left:0; top:2px; width:17px; height:17px; border:1.5px solid var(--line); border-radius:4px; cursor:pointer; }
@@ -229,6 +231,7 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .modal-title{ font-family:var(--font-title); font-size:var(--fs-sub); text-transform:lowercase; }
 .confirm-card{ max-width:300px; text-align:center; }
 .confirm-card .modal-title{ font-size:var(--fs-title); }
+.confirm-sub{ font-family:var(--font-body); font-weight:400; font-size:var(--fs-body); text-transform:none; color:var(--muted); line-height:1.35; margin-top:2px; }
 
 /* Календарь */
 .cal-card{ max-width:340px; gap:10px; }
@@ -271,4 +274,10 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
   .taskcard{ width:60%; margin-inline:auto; padding-left:0; padding-right:0; }
   .form-foot{ width:60%; margin-inline:auto; padding-left:0; padding-right:0; }
   .fab{ right:calc(var(--safe-right) + 34px); bottom:34px; }
+}
+
+/* Комп-версия: всё крупнее в 1.25× (эквивалент браузерных 125%) */
+@media (min-width:1000px){
+  html{ zoom:1.25; }
+  .auth, .app{ height:auto; min-height:100vh; min-height:100dvh; }
 }

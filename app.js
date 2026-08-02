@@ -159,7 +159,7 @@
 
   /* ---------- Подтверждение ---------- */
   let confirmResolve = null;
-  function askConfirm(text = "Удалить?") { $("#confirm-text").textContent = text; $("#confirm-modal").hidden = false; return new Promise((res) => (confirmResolve = res)); }
+  function askConfirm(text = "Удалить?", sub = "") { $("#confirm-text").textContent = text; $("#confirm-sub").textContent = sub; $("#confirm-sub").hidden = !sub; $("#confirm-modal").hidden = false; return new Promise((res) => (confirmResolve = res)); }
   function closeConfirm(v) { $("#confirm-modal").hidden = true; if (confirmResolve) { confirmResolve(v); confirmResolve = null; } }
   $("#confirm-yes").addEventListener("click", () => closeConfirm(true));
   $("#confirm-no").addEventListener("click", () => closeConfirm(false));
@@ -223,7 +223,7 @@
     return `<button type="button" class="status-pill ${selected ? "is-cur" : ""} ${off ? "off" : ""}" data-k="${s.id}" style="--c:${s.c}"><span>${esc(s.name)}</span>${statusDot(kind, s.id)}${del}</button>`;
   }
   async function deleteCustomStatus(kind, id, after) {
-    if (!(await askConfirm("Удалить статус? Элементы с ним станут «без статуса»."))) return;
+    if (!(await askConfirm("Удалить статус?", "Элементы с ним станут «без статуса»"))) return;
     await Store.deleteStatus(kind, id); await loadStatuses();
     if (after) after();
     if (currentView === "projects") renderKanban(); else if (currentView === "project") renderProjectTasks();
@@ -363,26 +363,75 @@
       }
     }
   }
-  function descToText(el) {
-    const lines = [];
-    el.childNodes.forEach((node) => {
-      if (node.nodeType === 1 && node.classList && node.classList.contains("chk")) {
-        const checked = node.getAttribute("data-checked") === "1";
-        lines.push((checked ? "[x] " : "[] ") + node.textContent);
-      } else if (node.nodeType === 1 && node.tagName === "DIV") { lines.push(node.textContent); }
-      else if (node.nodeType === 3) { lines.push(node.textContent); }
-      else if (node.nodeType === 1 && node.tagName === "BR") { lines.push(""); }
+  /* ---------- Форматирование текста (жирный/курсив/ссылки), хранится как HTML ---------- */
+  const FMT_ALLOWED = { B: 1, STRONG: 1, I: 1, EM: 1, U: 1, A: 1, BR: 1, DIV: 1 };
+  function sanitizeNode(root) {
+    [...root.childNodes].forEach((n) => {
+      if (n.nodeType === 3) return;
+      if (n.nodeType !== 1) { n.remove(); return; }
+      sanitizeNode(n);
+      if (!FMT_ALLOWED[n.tagName]) { while (n.firstChild) root.insertBefore(n.firstChild, n); n.remove(); return; }
+      const isChk = n.tagName === "DIV" && n.classList.contains("chk");
+      [...n.attributes].forEach((a) => {
+        const keep = (n.tagName === "A" && a.name === "href") || (isChk && (a.name === "data-checked" || a.name === "class"));
+        if (!keep) n.removeAttribute(a.name);
+      });
+      if (n.tagName === "A") { let h = (n.getAttribute("href") || "").trim(); if (h && !/^(https?:|mailto:)/i.test(h)) h = "https://" + h.replace(/^\/+/, ""); if (h) { n.setAttribute("href", h); n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } else { while (n.firstChild) root.insertBefore(n.firstChild, n); n.remove(); } }
     });
-    return lines.join("\n").replace(/\s+$/, "");
   }
-  function textToDesc(el, text) {
-    el.innerHTML = ""; if (!text) return;
-    text.split("\n").forEach((line) => {
+  function sanitizeHTML(html) { const t = document.createElement("div"); t.innerHTML = html || ""; sanitizeNode(t); return t.innerHTML; }
+  function descSerialize(el) {
+    const html = sanitizeHTML(el.innerHTML);
+    const t = document.createElement("div"); t.innerHTML = html;
+    if (!t.textContent.trim() && !t.querySelector(".chk")) return "";
+    return html;
+  }
+  function descLoad(el, val) {
+    el.innerHTML = ""; if (!val) return;
+    if (val.indexOf("<") !== -1) { el.innerHTML = sanitizeHTML(val); return; }
+    val.split("\n").forEach((line) => {
       let m = line.match(/^\[x\]\s?(.*)$/i);
       if (m) { const div = document.createElement("div"); makeChk(div, m[1], true); el.appendChild(div); return; }
       m = line.match(/^\[\s?\]\s?(.*)$/);
       if (m) { const div = document.createElement("div"); makeChk(div, m[1], false); el.appendChild(div); return; }
       const div = document.createElement("div"); if (line === "") div.appendChild(document.createElement("br")); else div.textContent = line; el.appendChild(div);
+    });
+  }
+  let linkRange = null, linkEl = null;
+  function openLinkModal(el) {
+    const sel = window.getSelection(); if (!sel.rangeCount) return;
+    linkRange = sel.getRangeAt(0).cloneRange(); linkEl = el;
+    $("#link-url").value = ""; $("#link-modal").hidden = false; setTimeout(() => $("#link-url").focus(), 30);
+  }
+  $("#link-ok").addEventListener("click", () => {
+    let url = ($("#link-url").value || "").trim(); $("#link-modal").hidden = true;
+    if (!url || !linkRange) { linkRange = null; return; }
+    if (!/^(https?:|mailto:)/i.test(url)) url = "https://" + url;
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(linkRange);
+    const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
+    a.textContent = linkRange.toString() || url; linkRange.deleteContents(); linkRange.insertNode(a);
+    const r = document.createRange(); r.setStartAfter(a); r.collapse(true); sel.removeAllRanges(); sel.addRange(r);
+    if (linkEl) linkEl.dispatchEvent(new Event("input", { bubbles: true }));
+    linkRange = null;
+  });
+  $("#link-cancel").addEventListener("click", () => { $("#link-modal").hidden = true; linkRange = null; });
+  $("#link-modal").addEventListener("click", (e) => { if (e.target.id === "link-modal") { $("#link-modal").hidden = true; linkRange = null; } });
+  function initFormatting(el) {
+    el.addEventListener("keydown", (e) => {
+      const mod = e.metaKey || e.ctrlKey; if (!mod) return;
+      const k = (e.key || "").toLowerCase();
+      if (k === "k" || (e.shiftKey && k === "u")) { e.preventDefault(); openLinkModal(el); }
+    });
+    el.addEventListener("paste", (e) => {
+      const cd = e.clipboardData; if (!cd) return;
+      const html = cd.getData("text/html"); const text = cd.getData("text/plain");
+      e.preventDefault();
+      const sel = window.getSelection(); if (!sel.rangeCount) return;
+      const range = sel.getRangeAt(0); range.deleteContents();
+      if (html) { range.insertNode(range.createContextualFragment(sanitizeHTML(html))); }
+      else if (text) { range.insertNode(document.createTextNode(text)); }
+      sel.collapseToEnd();
+      el.dispatchEvent(new Event("input", { bubbles: true }));
     });
   }
 
@@ -435,7 +484,7 @@
     opts = opts || {};
     const st = statusOf(t); const p = projById(t.project_id);
     const projCell = opts.showProjectPill ? `<span class="proj-pill task-proj ${p ? "" : "is-empty"}" data-act="project">${projPillInner(p)}</span>` : "";
-    const dateCell = opts.showDate ? `<button class="task-date" data-act="time">${t.due_date ? fmtShort(t.due_date) : "—"}</button>` : "";
+    const dateCell = opts.showDate ? `<button class="task-date" data-act="time">${t.due_date ? dayHead(t.due_date.slice(0, 10)) : "—"}</button>` : "";
     return `<div class="task swipeable" data-id="${t.id}">
       <div class="swipe-del">${TRASH_SVG}</div>
       <div class="swipe-row">
@@ -541,7 +590,7 @@
   }
   function taskFields() {
     let remind_at = null; if (cardNotify && cardDate && cardTime) { const d = new Date(`${cardDate}T${cardTime}:00`); if (!isNaN(d)) remind_at = d.toISOString(); }
-    return { title: $("#t-title").textContent.trim(), description: descToText($("#t-desc")), due_date: cardDate || null, due_time: cardTime || null, notify: cardNotify, project_id: cardProjectId || null, status: cardStatus, is_done: statusIsDone("task", cardStatus), remind_at, notified: false };
+    return { title: $("#t-title").textContent.trim(), description: descSerialize($("#t-desc")), due_date: cardDate || null, due_time: cardTime || null, notify: cardNotify, project_id: cardProjectId || null, status: cardStatus, is_done: statusIsDone("task", cardStatus), remind_at, notified: false };
   }
   async function saveTaskDraft() { if (editingTaskId) await Store.updateTask(editingTaskId, taskFields()); }
   const saveTaskDebounced = debounce(saveTaskDraft, 400);
@@ -552,7 +601,7 @@
   $("#t-project").addEventListener("click", () => openProjectPicker(cardProjectId, (id) => { cardProjectId = id; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
   $("#t-title").addEventListener("input", () => { taskTouched = true; saveTaskDebounced(); });
   $("#t-desc").addEventListener("input", () => { taskTouched = true; saveTaskDebounced(); });
-  initChecklist($("#t-desc"));
+  initChecklist($("#t-desc")); initFormatting($("#t-desc"));
 
   async function newTask(opts) {
     opts = opts || {};
@@ -564,7 +613,7 @@
   }
   function openTaskEdit(t, returnView) {
     editReturn = returnView || "tasks"; editingTaskId = t.id; cardDate = t.due_date || tomorrowStr(); cardTime = t.due_time || ""; cardNotify = t.notify !== false; cardStatus = statusOf(t); cardProjectId = t.project_id || null; taskTouched = true;
-    $("#t-title").innerText = t.title || ""; textToDesc($("#t-desc"), t.description || ""); renderCardMeta();
+    $("#t-title").innerText = t.title || ""; descLoad($("#t-desc"), t.description || ""); renderCardMeta();
     $("#t-submit").textContent = "Готово"; $("#t-delete").hidden = false;
     showView("task");
   }
@@ -619,7 +668,7 @@
     $("#p-start").textContent = pStart ? fmtFull(pStart) : "дата начала"; $("#p-start").classList.toggle("is-empty", !pStart);
     $("#p-end").textContent = pEnd ? fmtFull(pEnd) : "дата окончания"; $("#p-end").classList.toggle("is-empty", !pEnd);
   }
-  function projectFields() { return { name: $("#p-title").textContent.trim(), emoji: pEmoji || null, status: pStatus, start_date: pStart || null, end_date: pEnd || null, description: descToText($("#p-desc")) }; }
+  function projectFields() { return { name: $("#p-title").textContent.trim(), emoji: pEmoji || null, status: pStatus, start_date: pStart || null, end_date: pEnd || null, description: descSerialize($("#p-desc")) }; }
   async function saveProjectDraft() { if (!editingProjectId) return; const f = projectFields(); await Store.updateProject(editingProjectId, f); const i = projectsCache.findIndex((p) => p.id === editingProjectId); if (i >= 0) projectsCache[i] = { ...projectsCache[i], ...f }; }
   const saveProjectDebounced = debounce(saveProjectDraft, 400);
   $("#p-emoji").addEventListener("click", () => openEmojiModal(pEmoji, (em) => { pEmoji = em; projTouched = true; renderProjectMeta(); saveProjectDraft(); }));
@@ -628,7 +677,7 @@
   $("#p-end").addEventListener("click", () => openCalendar({ value: pEnd || todayStr(), onPick: (v) => { pEnd = v; projTouched = true; renderProjectMeta(); saveProjectDraft(); } }));
   $("#p-title").addEventListener("input", () => { projTouched = true; saveProjectDebounced(); });
   $("#p-desc").addEventListener("input", () => { projTouched = true; saveProjectDebounced(); });
-  initChecklist($("#p-desc"));
+  initChecklist($("#p-desc")); initFormatting($("#p-desc"));
   $("#p-add-task").addEventListener("click", () => newTask({ projectId: editingProjectId, returnView: "project" }));
   async function newProject() {
     pEmoji = ""; pStatus = "progress"; pStart = null; pEnd = null; projTouched = false;
@@ -641,7 +690,7 @@
   }
   function openProjectEdit(p) {
     editingProjectId = p.id; pEmoji = p.emoji || ""; pStatus = projStatusOf(p); pStart = p.start_date || null; pEnd = p.end_date || null; projTouched = true;
-    $("#p-title").innerText = p.name || ""; textToDesc($("#p-desc"), p.description || ""); renderProjectMeta();
+    $("#p-title").innerText = p.name || ""; descLoad($("#p-desc"), p.description || ""); renderProjectMeta();
     $("#p-submit").textContent = "Готово"; $("#p-delete").hidden = false;
     pFilterStatuses = new Set(defaultFilterIds("task")); pDateFilter = ""; applyProjFiltersUI();
     renderProjectTasks(); showView("project");
