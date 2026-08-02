@@ -496,7 +496,7 @@
   })();
 
   /* ---------- Фильтры ---------- */
-  let dateFilter = "", filterProjects = new Set(), filterStatuses = new Set(defaultFilterIds("task")), taskCount = 5, tasksById = {};
+  let dateFilter = "", filterProjects = new Set(), filterStatuses = new Set(defaultFilterIds("task")), tasksById = {};
   const FKEY = "gunco_filters";
   function saveFilters() { try { localStorage.setItem(FKEY, JSON.stringify({ dateFilter, projects: [...filterProjects], statuses: [...filterStatuses] })); } catch {} }
   function loadFilters() { try { const f = JSON.parse(localStorage.getItem(FKEY)) || {}; dateFilter = f.dateFilter || ""; filterProjects = new Set(f.projects || []); filterStatuses = new Set(f.statuses || defaultFilterIds("task")); } catch {} }
@@ -540,7 +540,7 @@
     if (dateFilter) tasks = tasks.filter((t) => (t.due_date || "").slice(0, 10) === dateFilter);
     if (filterProjects.size) tasks = tasks.filter((t) => filterProjects.has(t.project_id));
     tasks.sort(taskSort);
-    const shown = tasks.slice(0, taskCount);
+    const shown = tasks;
     tasksById = {}; shown.forEach((t) => (tasksById[t.id] = t));
     $("#tasks-empty").hidden = shown.length > 0;
     $("#task-list").innerHTML = buildGroupedTaskListHTML(shown, { showProjectPill: true });
@@ -601,13 +601,6 @@
   function openStatusFilterModal(set, onChange) { sfSet = set; sfOnChange = onChange; renderStatusFilterList(); $("#statusfilter-modal").hidden = false; }
   $("#status-filter").addEventListener("click", () => openStatusFilterModal(filterStatuses, () => { applyFiltersUI(); saveFilters(); renderTasks(); }));
   $("#statusfilter-modal").addEventListener("click", (e) => { if (e.target.id === "statusfilter-modal") $("#statusfilter-modal").hidden = true; });
-
-  /* ползунок */
-  const slider = $("#task-count"), sliderVal = $("#slider-val");
-  slider.addEventListener("input", (e) => { taskCount = +e.target.value; sliderVal.value = taskCount; renderTasks(); });
-  slider.addEventListener("change", () => Store.saveSettings({ count: taskCount }));
-  sliderVal.addEventListener("change", () => { let v = parseInt(sliderVal.value, 10); if (!v || v < 1) v = 1; taskCount = v; slider.value = Math.min(v, 9); sliderVal.value = v; Store.saveSettings({ count: v }); renderTasks(); });
-  sliderVal.addEventListener("focus", () => sliderVal.select());
 
   /* ---------- КАРТОЧКА задачи (автосохранение) ---------- */
   let editingTaskId = null, cardDate = tomorrowStr(), cardTime = "12:00", cardNotify = true, cardStatus = "progress", cardProjectId = null, taskTouched = false, editReturn = "tasks";
@@ -836,7 +829,6 @@
     if (hasStarted) return; hasStarted = true;
     $("#auth").hidden = true; $("#app").hidden = false;
     const s = await Store.settings();
-    taskCount = s.count || 5; slider.value = Math.min(taskCount, 9); sliderVal.value = taskCount;
     document.documentElement.setAttribute("data-theme", s.theme || "dark");
     await loadStatuses();
     await loadProjects();
