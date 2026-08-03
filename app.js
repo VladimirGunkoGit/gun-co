@@ -74,6 +74,8 @@
      Сенсор: удержание 1с берёт элемент; мышь: хватание с порогом 5px. Перетаскиваемый элемент
      поднимается (position:fixed), на его месте — плейсхолдер-зазор; соседи разъезжаются через FLIP. */
   const DRAG = { active: false };
+  // Эффективный zoom предков (на десктопе html{zoom:1.25}) — иначе position:fixed из-за zoom «улетает».
+  function dndZoom(el) { let z = 1; for (let n = el; n; n = n.parentElement) { const v = getComputedStyle(n).zoom; const f = v && v !== "normal" ? parseFloat(v) : 1; if (f && !isNaN(f)) z *= f; } return z || 1; }
   function makeSortable(root, opts) {
     if (!root) return;
     const itemSel = opts.itemSelector;
@@ -94,7 +96,7 @@
       const container = contSel ? item.closest(contSel) : root;
       if (!container) return;
       st = { item, container, pointerId: e.pointerId, pointerType: e.pointerType, startX: e.clientX, startY: e.clientY, dragging: false, holdTimer: null, placeholder: null };
-      if (e.pointerType === "touch" || e.pointerType === "pen") st.holdTimer = setTimeout(() => { if (st && !st.dragging) beginDrag(st.startX, st.startY); }, 1000);
+      if (e.pointerType === "touch" || e.pointerType === "pen") st.holdTimer = setTimeout(() => { if (st && !st.dragging) beginDrag(st.startX, st.startY); }, 500);
       window.addEventListener("pointermove", onMove, { passive: false });
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onCancel);
@@ -123,23 +125,24 @@
       st.blockTouch = (ev) => ev.preventDefault();
       window.addEventListener("touchmove", st.blockTouch, { passive: false });
       const item = st.item, r = item.getBoundingClientRect();
+      const z = st.zoom = dndZoom(item.parentElement);
       st.grabDX = st.startX - r.left; st.grabDY = st.startY - r.top;
       const ph = document.createElement(item.tagName);
-      ph.className = "dnd-ph"; ph.style.width = r.width + "px"; ph.style.height = r.height + "px";
+      ph.className = "dnd-ph"; ph.style.width = (r.width / z) + "px"; ph.style.height = (r.height / z) + "px";
       item.parentNode.insertBefore(ph, item);
       st.placeholder = ph; st.origContainer = st.container;
       st.origIndex = [...st.container.children].filter((c) => c !== item && c.matches(itemSel)).indexOf(ph); // фиктивно; для отмены пересчитаем
       st.origRef = item.nextSibling;
-      Object.assign(item.style, { position: "fixed", margin: "0", width: r.width + "px", height: r.height + "px", left: r.left + "px", top: r.top + "px", zIndex: "2000", pointerEvents: "none" });
+      Object.assign(item.style, { position: "fixed", margin: "0", width: (r.width / z) + "px", height: (r.height / z) + "px", left: (r.left / z) + "px", top: (r.top / z) + "px", zIndex: "2000", pointerEvents: "none" });
       item.classList.add("dnd-dragging");
       st.lastCont = st.container;
       moveDrag(x, y);
     }
 
     function moveDrag(x, y) {
-      const item = st.item;
-      item.style.left = (x - st.grabDX) + "px";
-      item.style.top = (y - st.grabDY) + "px";
+      const item = st.item, z = st.zoom;
+      item.style.left = ((x - st.grabDX) / z) + "px";
+      item.style.top = ((y - st.grabDY) / z) + "px";
       let cont = st.container;
       if (contSel) {
         const conts = containersOf();
@@ -176,7 +179,7 @@
       cont.insertBefore(ph, ref);
       rects.forEach((first, el) => {
         if (!el.isConnected) return;
-        const last = el.getBoundingClientRect(); const ddx = first.left - last.left, ddy = first.top - last.top;
+        const last = el.getBoundingClientRect(); const z = st.zoom; const ddx = (first.left - last.left) / z, ddy = (first.top - last.top) / z;
         if (ddx || ddy) { el.style.transition = "none"; el.style.transform = `translate(${ddx}px,${ddy}px)`; el.getBoundingClientRect(); el.style.transition = "transform .2s ease"; el.style.transform = ""; }
       });
     }
@@ -190,9 +193,9 @@
       // погасить клик, который иначе откроет карточку/выберет статус после drag
       const kill = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
       document.addEventListener("click", kill, true); setTimeout(() => document.removeEventListener("click", kill, true), 350);
-      const pr = ph.getBoundingClientRect();
+      const pr = ph.getBoundingClientRect(), z = st.zoom;
       item.style.transition = "left .2s ease, top .2s ease";
-      item.style.left = pr.left + "px"; item.style.top = pr.top + "px";
+      item.style.left = (pr.left / z) + "px"; item.style.top = (pr.top / z) + "px";
       setTimeout(() => {
         cont.insertBefore(item, ph); ph.remove();
         item.classList.remove("dnd-dragging");
