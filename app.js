@@ -57,16 +57,161 @@
   function projPillInner(p) { return `<span class="proj-emoji">${p ? projEmoji(p) : DEFAULT_EMOJI}</span><span class="proj-name">${p ? esc(p.name) : "проект"}</span>`; }
   function projStatusOf(p) { return p && p.status && statusById("project", p.status) ? p.status : "progress"; }
   const projCmpNewest = (a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")) || String(b.id).localeCompare(String(a.id));
+  // Ручной порядок карточек внутри колонки (перетаскивание). sort==null → в конец, дальше по свежести.
+  const projSort = (a, b) => { const as = a.sort == null ? 1e9 : a.sort, bs = b.sort == null ? 1e9 : b.sort; return as - bs || projCmpNewest(a, b); };
   function orderedProjects() {
     const byStatus = {};
     projectsCache.forEach((p) => { const st = projStatusOf(p); (byStatus[st] = byStatus[st] || []).push(p); });
     const out = [];
-    statusSet("project").forEach((s) => { const arr = byStatus[s.id]; if (arr) { arr.sort(projCmpNewest); out.push(...arr); } });
+    statusSet("project").forEach((s) => { const arr = byStatus[s.id]; if (arr) { arr.sort(projSort); out.push(...arr); } });
     return out;
   }
   let _projLoading = null;
   function loadProjects() { if (_projLoading) return _projLoading; _projLoading = Promise.resolve(Store.projects()).then((l) => { projectsCache = l; _projLoading = null; return l; }, (e) => { _projLoading = null; throw e; }); return _projLoading; }
   function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+  /* ---------- Перетаскивание (мышь + сенсор), анимация расталкивания (FLIP 0.2s) ----------
+     Сенсор: удержание 1с берёт элемент; мышь: хватание с порогом 5px. Перетаскиваемый элемент
+     поднимается (position:fixed), на его месте — плейсхолдер-зазор; соседи разъезжаются через FLIP. */
+  const DRAG = { active: false };
+  function makeSortable(root, opts) {
+    if (!root) return;
+    const itemSel = opts.itemSelector;
+    const contSel = opts.containerSelector || null;   // null → root — единственный контейнер
+    const axis = opts.axis || "y";                    // 'y' | 'wrap'
+    const colSel = opts.columnSelector || null;       // для кросс-колоночного (канбан)
+    let st = null;
+
+    const containersOf = () => (contSel ? [...root.querySelectorAll(contSel)] : [root]);
+    const colOf = (cont) => (colSel ? cont.closest(colSel) || cont : cont);
+
+    root.addEventListener("pointerdown", (e) => {
+      if (e.button != null && e.button > 0) return;
+      if (st) return;
+      if (opts.ignore && e.target.closest(opts.ignore)) return;
+      const item = e.target.closest(itemSel);
+      if (!item || !root.contains(item)) return;
+      const container = contSel ? item.closest(contSel) : root;
+      if (!container) return;
+      st = { item, container, pointerId: e.pointerId, pointerType: e.pointerType, startX: e.clientX, startY: e.clientY, dragging: false, holdTimer: null, placeholder: null };
+      if (e.pointerType === "touch" || e.pointerType === "pen") st.holdTimer = setTimeout(() => { if (st && !st.dragging) beginDrag(st.startX, st.startY); }, 1000);
+      window.addEventListener("pointermove", onMove, { passive: false });
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
+      document.addEventListener("keydown", onKey, true);
+    });
+
+    function onKey(e) { if (e.key === "Escape" && st && st.dragging) { e.preventDefault(); onCancel(); } }
+
+    function onMove(e) {
+      if (!st || st.dropping || e.pointerId !== st.pointerId) return;
+      const dx = e.clientX - st.startX, dy = e.clientY - st.startY;
+      if (!st.dragging) {
+        const dist = Math.hypot(dx, dy);
+        if (st.pointerType === "mouse") { if (dist > 5) beginDrag(e.clientX, e.clientY); }
+        else if (dist > 10 && st.holdTimer) { detach(); return; }   // сдвиг до удержания = скролл/свайп
+        if (!st || !st.dragging) return;
+      }
+      e.preventDefault();
+      moveDrag(e.clientX, e.clientY);
+    }
+
+    function beginDrag(x, y) {
+      if (!st || st.dragging) return;
+      if (st.holdTimer) { clearTimeout(st.holdTimer); st.holdTimer = null; }
+      st.dragging = true; DRAG.active = true; document.body.classList.add("dnd-active");
+      st.blockTouch = (ev) => ev.preventDefault();
+      window.addEventListener("touchmove", st.blockTouch, { passive: false });
+      const item = st.item, r = item.getBoundingClientRect();
+      st.grabDX = st.startX - r.left; st.grabDY = st.startY - r.top;
+      const ph = document.createElement(item.tagName);
+      ph.className = "dnd-ph"; ph.style.width = r.width + "px"; ph.style.height = r.height + "px";
+      item.parentNode.insertBefore(ph, item);
+      st.placeholder = ph; st.origContainer = st.container;
+      st.origIndex = [...st.container.children].filter((c) => c !== item && c.matches(itemSel)).indexOf(ph); // фиктивно; для отмены пересчитаем
+      st.origRef = item.nextSibling;
+      Object.assign(item.style, { position: "fixed", margin: "0", width: r.width + "px", height: r.height + "px", left: r.left + "px", top: r.top + "px", zIndex: "2000", pointerEvents: "none" });
+      item.classList.add("dnd-dragging");
+      st.lastCont = st.container;
+      moveDrag(x, y);
+    }
+
+    function moveDrag(x, y) {
+      const item = st.item;
+      item.style.left = (x - st.grabDX) + "px";
+      item.style.top = (y - st.grabDY) + "px";
+      let cont = st.container;
+      if (contSel) {
+        const conts = containersOf();
+        let inside = null, nearest = null, nd = Infinity;
+        for (const c of conts) {
+          const cr = colOf(c).getBoundingClientRect();
+          if (x >= cr.left && x <= cr.right) { inside = c; break; }
+          const d = x < cr.left ? cr.left - x : x - cr.right;
+          if (d < nd) { nd = d; nearest = c; }
+        }
+        cont = inside || nearest || st.container;
+      }
+      placePlaceholder(cont, insertIndex(cont, x, y));
+      st.lastCont = cont;
+    }
+
+    function insertIndex(cont, x, y) {
+      const items = [...cont.children].filter((c) => c !== st.item && c !== st.placeholder && c.matches(itemSel));
+      for (let i = 0; i < items.length; i++) {
+        const r = items[i].getBoundingClientRect();
+        if (axis === "y") { if (y < r.top + r.height / 2) return i; }
+        else { if (y < r.top) return i; if (y < r.bottom && x < r.left + r.width / 2) return i; }
+      }
+      return items.length;
+    }
+
+    function placePlaceholder(cont, idx) {
+      const ph = st.placeholder;
+      const items = [...cont.children].filter((c) => c !== st.item && c !== ph && c.matches(itemSel));
+      const ref = items[idx] || null;
+      if (ph.parentNode === cont && ph.nextSibling === ref) return;
+      const affected = new Set([...cont.children]); if (ph.parentNode) [...ph.parentNode.children].forEach((c) => affected.add(c));
+      const rects = new Map(); affected.forEach((el) => { if (el !== st.item && el !== ph) rects.set(el, el.getBoundingClientRect()); });
+      cont.insertBefore(ph, ref);
+      rects.forEach((first, el) => {
+        if (!el.isConnected) return;
+        const last = el.getBoundingClientRect(); const ddx = first.left - last.left, ddy = first.top - last.top;
+        if (ddx || ddy) { el.style.transition = "none"; el.style.transform = `translate(${ddx}px,${ddy}px)`; el.getBoundingClientRect(); el.style.transition = "transform .2s ease"; el.style.transform = ""; }
+      });
+    }
+
+    function onUp(e) { if (!st || st.dropping || e.pointerId !== st.pointerId) return; if (!st.dragging) { detach(); return; } finishDrop(false); }
+    function onCancel(e) { if (!st || st.dropping || e.pointerId !== st.pointerId) return; if (!st.dragging) { detach(); return; } st.lastCont = st.origContainer; st.origContainer.insertBefore(st.placeholder, st.origRef); finishDrop(true); }
+
+    function finishDrop(cancelled) {
+      st.dropping = true;
+      const item = st.item, ph = st.placeholder, cont = st.lastCont, orig = st.origContainer;
+      // погасить клик, который иначе откроет карточку/выберет статус после drag
+      const kill = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+      document.addEventListener("click", kill, true); setTimeout(() => document.removeEventListener("click", kill, true), 350);
+      const pr = ph.getBoundingClientRect();
+      item.style.transition = "left .2s ease, top .2s ease";
+      item.style.left = pr.left + "px"; item.style.top = pr.top + "px";
+      setTimeout(() => {
+        cont.insertBefore(item, ph); ph.remove();
+        item.classList.remove("dnd-dragging");
+        ["position", "margin", "width", "height", "left", "top", "zIndex", "pointerEvents", "transition", "transform"].forEach((k) => (item.style[k] = ""));
+        const items = [...cont.children].filter((c) => c.matches(itemSel));
+        const detail = { item, itemId: item.dataset.id || item.dataset.k, fromContainer: orig, toContainer: cont, newIndex: items.indexOf(item), orderedIds: items.map((x) => x.dataset.id || x.dataset.k) };
+        endGesture();
+        if (!cancelled && opts.onDrop) opts.onDrop(detail);
+      }, 205);
+    }
+
+    function endGesture() { detach(); document.body.classList.remove("dnd-active"); DRAG.active = false; if (opts.onEnd) opts.onEnd(); }
+    function detach() {
+      if (st && st.holdTimer) clearTimeout(st.holdTimer);
+      if (st && st.blockTouch) window.removeEventListener("touchmove", st.blockTouch);
+      window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); window.removeEventListener("pointercancel", onCancel); document.removeEventListener("keydown", onKey, true);
+      st = null;
+    }
+  }
 
   const BELL_BASE = `<path d="M6 8.6a6 6 0 0112 0c0 4.4 1.8 5.7 2.4 6.2.4.3.1.9-.4.9H4c-.5 0-.8-.6-.4-.9.6-.5 2.4-1.8 2.4-6.2z"/><path d="M10 19a2 2 0 004 0"/>`;
   const BELL_ON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${BELL_BASE}</svg>`;
@@ -112,8 +257,8 @@
       }
       return Local.ensure().projects;
     },
-    async addProject({ emoji, name, status, start_date, end_date, description }) {
-      const base = { emoji: emoji || null, name: name || "", status: status || "progress", start_date: start_date || null, end_date: end_date || null, description: description || null };
+    async addProject({ emoji, name, status, start_date, end_date, description, sort }) {
+      const base = { emoji: emoji || null, name: name || "", status: status || "progress", start_date: start_date || null, end_date: end_date || null, description: description || null, sort: sort == null ? null : sort };
       if (sb && this.userId) { const { data } = await sb.from("projects").insert({ ...base, user_id: this.userId }).select().single(); return data; }
       const d = Local.ensure(); const row = { id: uid(), created_at: new Date().toISOString(), ...base, emoji: emoji || "" }; d.projects.push(row); Local.write(d); return row;
     },
@@ -261,6 +406,15 @@
   }
   function openStatusPicker(kind, current, onPick) { statusPickKind = kind; statusPickCurrent = current; statusOnPick = onPick; renderStatusPickList(); $("#status-modal").hidden = false; }
   $("#status-modal").addEventListener("click", (e) => { if (e.target.id === "status-modal") $("#status-modal").hidden = true; });
+  // Перетаскивание статусов = смена порядка (ord). Для проектов это = порядок колонок канбана.
+  async function persistStatusOrder(kind, orderedIds) {
+    const set = statusSet(kind); const changed = [];
+    orderedIds.forEach((id, i) => { const s = set.find((x) => x.id === id); if (s && s.ord !== i) { s.ord = i; changed.push({ id, ord: i }); } });
+    set.sort(byOrd);
+    for (const c of changed) await Store.updateStatus(kind, c.id, { ord: c.ord });
+    if (kind === "project" && currentView === "projects") renderKanban();
+  }
+  makeSortable($("#status-list"), { itemSelector: ".status-pill", axis: "wrap", ignore: ".status-del", onDrop: (d) => persistStatusOrder(statusPickKind, d.orderedIds) });
 
   /* Форма создания статуса */
   let statusFormKind = "task", statusFormColor = STATUS_PALETTE[0], statusFormOnCreate = null;
@@ -599,6 +753,7 @@
     }));
   }
   function openStatusFilterModal(set, onChange) { sfSet = set; sfOnChange = onChange; renderStatusFilterList(); $("#statusfilter-modal").hidden = false; }
+  makeSortable($("#statusfilter-list"), { itemSelector: ".status-pill", axis: "wrap", ignore: ".status-del", onDrop: (d) => persistStatusOrder("task", d.orderedIds) });
   $("#status-filter").addEventListener("click", () => openStatusFilterModal(filterStatuses, () => { applyFiltersUI(); saveFilters(); renderTasks(); }));
   $("#statusfilter-modal").addEventListener("click", (e) => { if (e.target.id === "statusfilter-modal") $("#statusfilter-modal").hidden = true; });
 
@@ -678,17 +833,36 @@
   async function renderKanban() {
     await loadProjects();
     const tasks = await Store.tasks();
+    if (!projectsCache.length) { $("#kanban").innerHTML = `<p class="empty kb-empty">нет проектов — создай первый по +</p>`; return; }
     const byStatus = {};
     projectsCache.forEach((p) => { const st = projStatusOf(p); (byStatus[st] = byStatus[st] || []).push(p); });
-    Object.values(byStatus).forEach((arr) => arr.sort(projCmpNewest));
+    Object.values(byStatus).forEach((arr) => arr.sort(projSort));
+    // все колонки статусов проектов; пустые скрыты классом (показываются при перетаскивании как зоны сброса)
     let html = "";
-    statusSet("project").forEach((s) => { const arr = byStatus[s.id]; if (!arr || !arr.length) return; html += `<div class="kb-col"><div class="kb-col-head">${statusDot("project", s.id)}<span>${esc(s.name)}</span></div><div class="kb-cards scroll">${arr.map((p) => kanbanCard(p, tasks)).join("")}</div></div>`; });
-    $("#kanban").innerHTML = html || `<p class="empty kb-empty">нет проектов — создай первый по +</p>`;
+    statusSet("project").forEach((s) => { const arr = byStatus[s.id] || []; html += `<div class="kb-col${arr.length ? "" : " kb-col--empty"}" data-status="${s.id}"><div class="kb-col-head">${statusDot("project", s.id)}<span>${esc(s.name)}</span></div><div class="kb-cards scroll">${arr.map((p) => kanbanCard(p, tasks)).join("")}</div></div>`; });
+    $("#kanban").innerHTML = html;
   }
   $("#kanban").addEventListener("click", (e) => {
     const card = e.target.closest(".kb-card"); if (!card) return; const p = projById(card.dataset.id); if (!p) return;
     openProjectEdit(p);
   });
+  // Перетаскивание карточек проектов: реордер внутри колонки + перенос между колонками (смена статуса)
+  makeSortable($("#kanban"), {
+    itemSelector: ".kb-card", containerSelector: ".kb-cards", columnSelector: ".kb-col", axis: "y",
+    onDrop: (d) => onKanbanDrop(d),
+  });
+  async function onKanbanDrop(d) {
+    const proj = projById(d.itemId); if (!proj) return;
+    const toCol = d.toContainer.closest(".kb-col"), fromCol = d.fromContainer.closest(".kb-col");
+    const toStatus = toCol && toCol.dataset.status; if (!toStatus) return;
+    const statusChanged = projStatusOf(proj) !== toStatus;
+    const updates = [];
+    const renumber = (colEl) => { if (!colEl) return; [...colEl.querySelectorAll(".kb-card")].forEach((c, i) => { const p = projById(c.dataset.id); if (!p) return; const patch = {}; if (p.sort !== i) { p.sort = i; patch.sort = i; } if (p === proj && statusChanged) { p.status = toStatus; patch.status = toStatus; } if (Object.keys(patch).length) updates.push({ id: p.id, patch }); }); };
+    renumber(toCol); if (fromCol && fromCol !== toCol) renumber(fromCol);
+    // пустые колонки снова скрыть
+    $$("#kanban .kb-col").forEach((c) => c.classList.toggle("kb-col--empty", !c.querySelector(".kb-card")));
+    for (const u of updates) await Store.updateProject(u.id, u.patch);
+  }
 
   /* ---------- КАРТОЧКА проекта (автосохранение) ---------- */
   let editingProjectId = null, pEmoji = "", pStatus = "progress", pStart = null, pEnd = null, projTouched = false;
@@ -712,7 +886,9 @@
   async function newProject() {
     pEmoji = ""; pStatus = "progress"; pStart = null; pEnd = null; projTouched = false;
     $("#p-title").innerText = ""; $("#p-desc").innerHTML = ""; renderProjectMeta();
-    const draft = await Store.addProject(projectFields()); editingProjectId = draft.id;
+    const minSort = projectsCache.filter((p) => projStatusOf(p) === "progress").reduce((m, p) => Math.min(m, p.sort == null ? 0 : p.sort), 0) - 1;
+    const draft = await Store.addProject({ ...projectFields(), sort: minSort }); editingProjectId = draft.id;
+    if (draft.sort == null) draft.sort = minSort;
     if (!projectsCache.some((p) => p.id === draft.id)) projectsCache.push(draft);
     $("#p-submit").textContent = "Готово"; $("#p-delete").hidden = false;
     pFilterStatuses = new Set(defaultFilterIds("task")); pDateFilter = ""; applyProjFiltersUI();
