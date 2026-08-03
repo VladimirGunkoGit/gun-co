@@ -87,12 +87,13 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .kb-card-title .proj-emoji{ flex:none; font-size:15px; line-height:1; }
 /* Перетаскивание (мышь + сенсор) */
 body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
+/* На перетаскиваемых элементах гасим системное выделение/callout iOS, иначе долгое нажатие не стартует drag */
+.kb-card, .status-pill{ -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
 .dnd-dragging{ z-index:2000; box-shadow:0 10px 26px rgba(0,0,0,.4); transform:scale(1.02); opacity:.97; }
 [data-theme="light"] .dnd-dragging{ box-shadow:0 10px 26px rgba(0,0,0,.22); }
 .dnd-ph{ box-sizing:border-box; border:none; padding:0; background:rgba(127,127,127,.16); border-radius:5px; }
+/* Пустые колонки статусов всегда скрыты — в т.ч. при перетаскивании (в них нельзя бросить карточку) */
 .kb-col--empty{ display:none; }
-body.dnd-active .kb-col--empty{ display:flex; }
-body.dnd-active .kb-col--empty .kb-cards{ min-height:64px; }
 .kb-badges{ flex:none; display:flex; gap:4px; }
 .kb-badge{ min-width:22px; height:22px; padding:0 6px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; background:rgba(var(--c), .22); color:rgb(var(--c)); }
 .kb-empty{ padding:24px 18px; }

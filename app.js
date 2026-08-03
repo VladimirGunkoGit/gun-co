@@ -82,7 +82,7 @@
     const colSel = opts.columnSelector || null;       // для кросс-колоночного (канбан)
     let st = null;
 
-    const containersOf = () => (contSel ? [...root.querySelectorAll(contSel)] : [root]);
+    const containersOf = () => (contSel ? [...root.querySelectorAll(contSel)].filter((c) => c.getClientRects().length) : [root]);   // скрытые (пустые) колонки — не цели сброса
     const colOf = (cont) => (colSel ? cont.closest(colSel) || cont : cont);
 
     root.addEventListener("pointerdown", (e) => {
