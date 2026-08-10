@@ -356,7 +356,7 @@
   const cal = { y: 0, m: 0, value: "", allowAll: false, onPick: null };
   function openCalendar({ value, allowAll = false, clearLabel = "Все дни", onPick }) {
     const base = (value || todayStr()).split("-"); cal.y = +base[0]; cal.m = +base[1] - 1; cal.value = value || (allowAll ? "" : todayStr()); cal.allowAll = allowAll; cal.onPick = onPick;
-    $("#cal-all").hidden = !allowAll; $("#cal-all").textContent = clearLabel; renderCal(); $("#cal").hidden = false;
+    $("#cal-clear").hidden = !allowAll; renderCal(); $("#cal").hidden = false;
   }
   function renderCal() { drawCal({ y: cal.y, m: cal.m, value: cal.value }, $("#cal-grid"), $("#cal-title"), (d) => { $("#cal").hidden = true; cal.onPick && cal.onPick(d); }); }
   function calPrev() { cal.m--; if (cal.m < 0) { cal.m = 11; cal.y--; } renderCal(); }
@@ -365,7 +365,7 @@
   $("#cal-next").addEventListener("click", calNext);
   (function () { const g = $("#cal-grid"); let sx = 0, sy = 0, on = false; g.addEventListener("touchstart", (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true }); g.addEventListener("touchend", (e) => { if (!on) return; on = false; const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) (dx < 0 ? calNext() : calPrev()); }, { passive: true }); })();
   $("#cal-cancel").addEventListener("click", () => ($("#cal").hidden = true));
-  $("#cal-all").addEventListener("click", () => { $("#cal").hidden = true; cal.onPick && cal.onPick(""); });
+  $("#cal-clear").addEventListener("click", () => { $("#cal").hidden = true; cal.onPick && cal.onPick(""); });
   $("#cal").addEventListener("click", (e) => { if (e.target.id === "cal") $("#cal").hidden = true; });
 
   /* ---------- Дата+время+уведомление (большое окно, для главной) ---------- */
@@ -382,7 +382,8 @@
   $("#dt-cancel").addEventListener("click", () => ($("#datetime-modal").hidden = true));
   $("#datetime-modal").addEventListener("click", (e) => { if (e.target.id === "datetime-modal") $("#datetime-modal").hidden = true; });
   $("#dt-done").addEventListener("click", () => { $("#datetime-modal").hidden = true; if (dt.onDone) dt.onDone(dt.date, $("#dt-time").value, !$("#dt-notify").classList.contains("off")); });
-  $("#dt-clear").addEventListener("click", () => { $("#datetime-modal").hidden = true; if (dt.onDone) dt.onDone("", "", !$("#dt-notify").classList.contains("off")); });
+  $("#dt-cal-clear").addEventListener("click", () => { dt.date = ""; drawDtCal(); });
+  $("#dt-time-clear").addEventListener("click", () => { $("#dt-time").value = ""; });
 
   /* ---------- Статус: пикер (одиночный) + создание/удаление кастомных ---------- */
   function statusAddBtn() { return `<button type="button" class="status-add" aria-label="Новый статус"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 6.5v11M6.5 12h11"/></svg></button>`; }
@@ -498,18 +499,26 @@
   $("#projform-cancel").addEventListener("click", () => ($("#projform-modal").hidden = true));
   $("#projform-modal").addEventListener("click", (e) => { if (e.target.id === "projform-modal") $("#projform-modal").hidden = true; });
 
-  /* ---------- Чек-листы в contenteditable ---------- */
+  /* ---------- Чек-листы и нумерованные списки в contenteditable ---------- */
   const CHK_TRIG = /^\[\]\s/;
+  const NUM_TRIG = /^(\d+)\.\s/;   // «N. » в начале строки → нумерованный список
   function initChecklist(el) {
     el.addEventListener("beforeinput", (e) => {
-      if (e.inputType === "insertParagraph") {
-        const blk = currentBlock(el);
-        if (blk && blk.classList.contains("chk")) {
-          e.preventDefault();
-          const nl = document.createElement("div"); nl.appendChild(document.createElement("br"));
-          blk.after(nl); placeCaretAtStart(nl);
-        }
+      if (e.inputType !== "insertParagraph") return;
+      const blk = currentBlock(el); if (!blk) return;
+      const isChk = blk.classList.contains("chk"), isNum = blk.classList.contains("num");
+      if (!isChk && !isNum) return;
+      e.preventDefault();
+      if (!blk.textContent.trim()) {
+        // пустой пункт + Enter → выйти из списка: обычная строка без отступа
+        blk.className = ""; blk.removeAttribute("data-checked"); blk.removeAttribute("data-num");
+        blk.innerHTML = "<br>"; placeCaretAtStart(blk); return;
       }
+      // есть текст → продолжить список новым пунктом
+      const nl = document.createElement("div");
+      if (isChk) makeChk(nl, "", false);
+      else makeNum(nl, "", (parseInt(blk.getAttribute("data-num") || "0", 10) || 0) + 1);
+      blk.after(nl); placeCaretAtStart(nl);
     });
     el.addEventListener("input", (e) => { if (e.isComposing) return; maybeMakeChecklist(el); });
     el.addEventListener("click", (e) => {
@@ -526,20 +535,27 @@
   function placeCaretEnd(node) { const sel = window.getSelection(); const r = document.createRange(); r.selectNodeContents(node); r.collapse(false); sel.removeAllRanges(); sel.addRange(r); }
   function makeChk(blk, rest, checked) {
     blk.className = "chk" + (checked ? " is-done" : ""); blk.setAttribute("data-checked", checked ? "1" : "0");
+    blk.removeAttribute("data-num");
+    blk.textContent = rest || "";
+  }
+  function makeNum(blk, rest, num) {
+    blk.className = "num"; blk.setAttribute("data-num", String(num || 1)); blk.removeAttribute("data-checked");
     blk.textContent = rest || "";
   }
   function maybeMakeChecklist(el) {
     const sel = window.getSelection(); if (!sel.rangeCount) return;
     const blk = currentBlock(el);
     if (blk) {
-      if (blk.classList.contains("chk")) return;
-      const txt = blk.textContent;
+      if (blk.classList.contains("chk") || blk.classList.contains("num")) return;
+      const txt = blk.textContent; let m;
       if (CHK_TRIG.test(txt)) { makeChk(blk, txt.replace(CHK_TRIG, ""), false); placeCaretEnd(blk); }
+      else if ((m = txt.match(NUM_TRIG))) { makeNum(blk, txt.replace(NUM_TRIG, ""), parseInt(m[1], 10)); placeCaretEnd(blk); }
     } else {
       const node = sel.anchorNode;
-      if (node && node.nodeType === 3 && node.parentNode === el && CHK_TRIG.test(node.textContent)) {
-        const div = document.createElement("div"); el.insertBefore(div, node); const rest = node.textContent.replace(CHK_TRIG, ""); node.remove();
-        makeChk(div, rest, false); placeCaretEnd(div);
+      if (node && node.nodeType === 3 && node.parentNode === el) {
+        const tx = node.textContent; let m;
+        if (CHK_TRIG.test(tx)) { const div = document.createElement("div"); el.insertBefore(div, node); const rest = tx.replace(CHK_TRIG, ""); node.remove(); makeChk(div, rest, false); placeCaretEnd(div); }
+        else if ((m = tx.match(NUM_TRIG))) { const div = document.createElement("div"); el.insertBefore(div, node); const rest = tx.replace(NUM_TRIG, ""); node.remove(); makeNum(div, rest, parseInt(m[1], 10)); placeCaretEnd(div); }
       }
     }
   }
@@ -552,8 +568,9 @@
       sanitizeNode(n);
       if (!FMT_ALLOWED[n.tagName]) { while (n.firstChild) root.insertBefore(n.firstChild, n); n.remove(); return; }
       const isChk = n.tagName === "DIV" && n.classList.contains("chk");
+      const isNum = n.tagName === "DIV" && n.classList.contains("num");
       [...n.attributes].forEach((a) => {
-        const keep = (n.tagName === "A" && a.name === "href") || (isChk && (a.name === "data-checked" || a.name === "class"));
+        const keep = (n.tagName === "A" && a.name === "href") || (isChk && (a.name === "data-checked" || a.name === "class")) || (isNum && (a.name === "data-num" || a.name === "class"));
         if (!keep) n.removeAttribute(a.name);
       });
       if (n.tagName === "A") { let h = (n.getAttribute("href") || "").trim(); if (h && !/^(https?:|mailto:)/i.test(h)) h = "https://" + h.replace(/^\/+/, ""); if (h) { n.setAttribute("href", h); n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } else { while (n.firstChild) root.insertBefore(n.firstChild, n); n.remove(); } }
@@ -563,7 +580,7 @@
   function descSerialize(el) {
     const html = sanitizeHTML(el.innerHTML);
     const t = document.createElement("div"); t.innerHTML = html;
-    if (!t.textContent.trim() && !t.querySelector(".chk")) return "";
+    if (!t.textContent.trim() && !t.querySelector(".chk, .num")) return "";
     return html;
   }
   function descLoad(el, val) {
@@ -679,7 +696,7 @@
         <button class="row-status" data-act="status" aria-label="Статус">${statusDot("task", st, true)}</button>
         <span class="task-title">${esc(t.title)}</span>
         ${projCell}${dateCell}
-        <button class="task-time" data-act="time">${t.due_time ? esc(t.due_time) : "—"}</button>
+        <button class="task-time" data-act="time">${t.due_time ? esc(t.due_time) : ""}${t.notify ? `<span class="task-bell">${BELL_ON}</span>` : ""}</button>
       </div>
     </div>`;
   }
@@ -738,7 +755,9 @@
   }
   $("#task-list").addEventListener("click", taskListClick(() => tasksById, renderTasks, "tasks"));
   $("#p-task-list").addEventListener("click", taskListClick(() => projTasksById, renderProjectTasks, "project"));
-  async function updateTaskDateTime(id, date, time, notify) { let remind_at = null; if (notify && date && time) { const d = new Date(`${date}T${time}:00`); if (!isNaN(d)) remind_at = d.toISOString(); } await Store.updateTask(id, { due_date: date || null, due_time: time || null, notify, remind_at, notified: false }); }
+  // Уведомление: включено + есть дата → в это время; без времени → в 11:00; без даты → нет.
+  function computeRemindAt(date, time, notify) { if (!(notify && date)) return null; const d = new Date(`${date}T${time || "11:00"}:00`); return isNaN(d) ? null : d.toISOString(); }
+  async function updateTaskDateTime(id, date, time, notify) { const remind_at = computeRemindAt(date, time, notify); await Store.updateTask(id, { due_date: date || null, due_time: time || null, notify, remind_at, notified: false }); }
 
   /* фильтры-кнопки */
   $("#date-filter").addEventListener("click", () => openCalendar({ value: dateFilter, allowAll: true, onPick: (v) => { dateFilter = v; applyFiltersUI(); saveFilters(); renderTasks(); } }));
@@ -771,13 +790,14 @@
     $("#t-project").innerHTML = projPillInner(p); $("#t-project").classList.toggle("is-empty", !p);
   }
   function taskFields() {
-    let remind_at = null; if (cardNotify && cardDate && cardTime) { const d = new Date(`${cardDate}T${cardTime}:00`); if (!isNaN(d)) remind_at = d.toISOString(); }
+    const remind_at = computeRemindAt(cardDate, cardTime, cardNotify);
     return { title: $("#t-title").textContent.trim(), description: descSerialize($("#t-desc")), due_date: cardDate || null, due_time: cardTime || null, notify: cardNotify, project_id: cardProjectId || null, status: cardStatus, is_done: statusIsDone("task", cardStatus), remind_at, notified: false };
   }
   async function saveTaskDraft() { if (editingTaskId) await Store.updateTask(editingTaskId, taskFields()); }
   const saveTaskDebounced = debounce(saveTaskDraft, 400);
   $("#t-date").addEventListener("click", () => openCalendar({ value: cardDate, allowAll: true, clearLabel: "очистить дату", onPick: (v) => { cardDate = v; taskTouched = true; renderCardMeta(); saveTaskDraft(); } }));
   $("#t-time").addEventListener("input", (e) => { cardTime = e.target.value; taskTouched = true; saveTaskDraft(); });
+  $("#t-time-clear").addEventListener("click", () => { cardTime = ""; $("#t-time").value = ""; taskTouched = true; saveTaskDraft(); });
   $("#t-notify").addEventListener("click", () => { cardNotify = !cardNotify; taskTouched = true; renderCardMeta(); saveTaskDraft(); });
   $("#t-status").addEventListener("click", () => openStatusPicker("task", cardStatus, (k) => { cardStatus = k; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
   $("#t-project").addEventListener("click", () => openProjectPicker(cardProjectId, (id) => { cardProjectId = id; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
@@ -787,7 +807,9 @@
 
   async function newTask(opts) {
     opts = opts || {};
-    cardDate = tomorrowStr(); cardTime = "12:00"; cardNotify = true; cardStatus = "progress"; cardProjectId = opts.projectId || null; taskTouched = false; editReturn = opts.returnView || "tasks";
+    await loadProjects();
+    const firstProj = orderedProjects()[0];
+    cardDate = tomorrowStr(); cardTime = ""; cardNotify = false; cardStatus = "progress"; cardProjectId = opts.projectId || (firstProj ? firstProj.id : null); taskTouched = false; editReturn = opts.returnView || "tasks";
     $("#t-title").innerText = ""; $("#t-desc").innerHTML = ""; renderCardMeta();
     const draft = await Store.addTask(taskFields()); editingTaskId = draft.id;
     $("#t-submit").textContent = "Готово"; $("#t-delete").hidden = false;

@@ -47,7 +47,7 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 .btn:active{ opacity:.6; }
 .btn--solid{ background:var(--solid-bg); color:var(--solid-fg); font-weight:500; }
 .btn--google{ display:inline-flex; align-items:center; justify-content:center; gap:8px; width:100%; color:var(--text-soft); }
-.btn--danger{ color:var(--muted); }
+.btn--danger{ color:#a01919; }
 .chip{ display:inline-flex; align-items:center; gap:6px; background:var(--inactive-bg); color:var(--inactive-fg); border:none; border-radius:var(--radius); padding:6px 12px; font-size:var(--fs-body); letter-spacing:.02em; transition:color .15s, background .15s; }
 .chip.is-on, .chip--date.is-set{ background:var(--solid-bg); color:var(--solid-fg); }
 .icon-btn{ background:transparent; border:none; color:var(--fg); font-size:17px; width:32px; height:32px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; }
@@ -183,7 +183,9 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .task-title{ flex:1; font-size:var(--fs-body); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .task-proj{ flex:none; cursor:pointer; max-width:38%; overflow:hidden; }
 .task-proj .proj-name{ overflow:hidden; text-overflow:ellipsis; }
-.task-time{ flex:none; min-width:44px; text-align:right; color:var(--muted); font-size:var(--fs-body); white-space:nowrap; background:transparent; border:none; padding:0; }
+.task-time{ flex:none; min-width:44px; display:inline-flex; align-items:center; justify-content:flex-end; gap:4px; color:var(--muted); font-size:var(--fs-body); white-space:nowrap; background:transparent; border:none; padding:0; }
+.task-bell{ display:inline-flex; align-items:center; }
+.task-bell svg{ width:13px; height:13px; display:block; }
 .empty{ color:var(--muted); padding:8px 0; }
 
 /* КАРТОЧКА задачи (создание/редактирование = вид готовой карточки) */
@@ -208,6 +210,8 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .taskcard-desc .chk::before{ content:""; position:absolute; left:0; top:2px; width:17px; height:17px; border:1.5px solid var(--line); border-radius:4px; cursor:pointer; }
 .taskcard-desc .chk[data-checked="1"]::after{ content:""; position:absolute; left:6px; top:4px; width:5px; height:9px; border:solid var(--fg); border-width:0 2px 2px 0; transform:rotate(45deg); pointer-events:none; }
 .taskcard-desc .chk.is-done{ opacity:.5; text-decoration:line-through; }
+.taskcard-desc .num{ position:relative; padding-left:28px; margin:5px 0 5px 26px; min-height:1.35em; }
+.taskcard-desc .num::before{ content:attr(data-num) "."; position:absolute; left:0; top:0; color:var(--text-soft); font-variant-numeric:tabular-nums; white-space:nowrap; }
 
 /* Форма-подвал */
 .form{ display:flex; flex-direction:column; height:100%; }
@@ -239,7 +243,17 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 /* Календарь */
 .cal-card{ max-width:340px; gap:10px; }
 .cal-head{ display:flex; align-items:center; justify-content:space-between; }
+.cal-title-wrap{ display:inline-flex; align-items:center; gap:6px; }
 .cal-title{ font-family:var(--font-title); font-size:var(--fs-sub); text-transform:lowercase; }
+/* Корзинки очистки (дата/время) */
+.trash-btn{ flex:none; width:30px; height:30px; padding:0; border:none; background:transparent; color:var(--muted); display:inline-flex; align-items:center; justify-content:center; border-radius:8px; cursor:pointer; }
+.trash-btn:active{ opacity:.5; }
+.dt-time-row{ display:flex; align-items:center; gap:8px; }
+.dt-time-row .time-input{ flex:1; width:auto; }
+.meta-trash{ flex:none; border:none; background:transparent; color:var(--muted); display:inline-flex; align-items:center; justify-content:center; padding:6px 2px; cursor:pointer; }
+.meta-trash:active{ opacity:.5; }
+/* Убираем нативную иконку-часы у полей времени — редактируем тапом/клавиатурой */
+.time-input::-webkit-calendar-picker-indicator, .meta-time::-webkit-calendar-picker-indicator{ display:none; }
 .cal-weekdays{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; color:var(--muted); font-size:11px; text-align:center; }
 .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
 .cal-day{ aspect-ratio:1; border:none; background:transparent; color:var(--fg); border-radius:50%; font-size:var(--fs-body); display:flex; align-items:center; justify-content:center; }

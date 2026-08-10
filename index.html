@@ -98,6 +98,7 @@
         <div class="taskcard-meta taskcard-meta--datetime">
           <button id="t-date" class="meta-pill" type="button"></button>
           <input id="t-time" class="meta-pill meta-time" type="time" step="60" aria-label="время" />
+          <button id="t-time-clear" class="meta-trash" type="button" aria-label="Очистить время"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></svg></button>
           <button id="t-notify" class="meta-pill meta-bell" type="button" aria-label="уведомление"></button>
         </div>
         <div id="t-desc" class="taskcard-desc" contenteditable="true" data-placeholder="описание"></div>
@@ -192,7 +193,10 @@
   <div class="modal-card cal-card">
     <div class="cal-head">
       <button id="cal-prev" class="icon-btn" aria-label="Назад">‹</button>
-      <div id="cal-title" class="cal-title"></div>
+      <div class="cal-title-wrap">
+        <div id="cal-title" class="cal-title"></div>
+        <button id="cal-clear" class="trash-btn" type="button" hidden aria-label="Очистить дату"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></svg></button>
+      </div>
       <button id="cal-next" class="icon-btn" aria-label="Вперёд">›</button>
     </div>
     <div class="cal-weekdays"><span>пн</span><span>вт</span><span>ср</span><span>чт</span><span>пт</span><span>сб</span><span>вс</span></div>
@@ -200,7 +204,6 @@
     <div class="cal-actions">
       <button id="cal-cancel" class="btn" type="button">Отмена</button>
     </div>
-    <button id="cal-all" class="modal-clear" type="button" hidden>очистить</button>
   </div>
 </div>
 
@@ -209,12 +212,18 @@
   <div class="modal-card dt-card">
     <div class="cal-head">
       <button id="dt-prev" class="icon-btn" aria-label="Назад">‹</button>
-      <div id="dt-title" class="cal-title"></div>
+      <div class="cal-title-wrap">
+        <div id="dt-title" class="cal-title"></div>
+        <button id="dt-cal-clear" class="trash-btn" type="button" aria-label="Очистить дату"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></svg></button>
+      </div>
       <button id="dt-next" class="icon-btn" aria-label="Вперёд">›</button>
     </div>
     <div class="cal-weekdays"><span>пн</span><span>вт</span><span>ср</span><span>чт</span><span>пт</span><span>сб</span><span>вс</span></div>
     <div id="dt-grid" class="cal-grid"></div>
-    <input id="dt-time" class="field time-input" type="time" step="60" aria-label="время" />
+    <div class="dt-time-row">
+      <input id="dt-time" class="field time-input" type="time" step="60" aria-label="время" />
+      <button id="dt-time-clear" class="trash-btn" type="button" aria-label="Очистить время"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></svg></button>
+    </div>
     <button id="dt-notify" class="bell-btn" type="button" aria-label="Уведомление">
       <svg class="bell-ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
         <path d="M6 8.6a6 6 0 0112 0c0 4.4 1.8 5.7 2.4 6.2.4.3.1.9-.4.9H4c-.5 0-.8-.6-.4-.9.6-.5 2.4-1.8 2.4-6.2z"/><path d="M10 19a2 2 0 004 0"/><line class="bell-slash" x1="4.5" y1="4" x2="20" y2="20.5"/>
@@ -225,7 +234,6 @@
       <button id="dt-done" class="btn btn--solid" type="button">Готово</button>
       <button id="dt-cancel" class="btn" type="button">Отмена</button>
     </div>
-    <button id="dt-clear" class="modal-clear" type="button">очистить</button>
   </div>
 </div>
 
