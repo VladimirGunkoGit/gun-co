@@ -64,9 +64,7 @@
     { emoji: "🏠", name: "Жильё", color: STATUS_PALETTE[2] },
     { emoji: "🍏", name: "Продукты", color: STATUS_PALETTE[5] },
     { emoji: "🍽️", name: "Кафе", color: STATUS_PALETTE[9] },
-    { emoji: "🚗", name: "Машина", color: STATUS_PALETTE[3] },
     { emoji: "👕", name: "Покупки", color: STATUS_PALETTE[4] },
-    { emoji: "🚌", name: "Транспорт", color: STATUS_PALETTE[6] },
     { emoji: "📱", name: "Связь", color: STATUS_PALETTE[7] },
     { emoji: "🎬", name: "Развлечения", color: STATUS_PALETTE[11] },
   ];
@@ -794,7 +792,7 @@
         <button class="row-status" data-act="status" aria-label="Статус">${statusDot("task", st, true)}</button>
         <span class="task-title">${esc(t.title)}</span>
         ${projCell}${dateCell}
-        <button class="task-time" data-act="time">${t.due_time ? esc(t.due_time) : ""}${t.notify ? `<span class="task-bell">${BELL_ON}</span>` : ""}</button>
+        <button class="task-time" data-act="time">${t.notify ? `<span class="task-bell">${BELL_ON}</span>` : ""}${t.due_time ? esc(t.due_time) : ""}</button>
       </div>
     </div>`;
   }

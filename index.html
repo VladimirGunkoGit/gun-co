@@ -181,10 +181,12 @@
           <button id="fin-range" class="chip chip--ico" type="button" aria-label="Период"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M8 3v3M16 3v3M8 13h3M8 17h8"/></svg><span id="fin-range-label"></span></button>
           <button id="fin-sort" class="chip chip--ico" type="button" aria-label="По сумме"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h16M4 12h6M4 18h11"/></svg></button>
         </div>
-        <div id="fin-list" class="fin-list scroll"></div>
-        <div id="fin-pinned">
-          <div class="fin-row fin-total"><span class="fin-name">всего</span><span id="fin-total-sum" class="fin-sum"></span></div>
-          <button id="fin-income" class="fin-row fin-income" type="button"><span class="fin-name">доходы</span><span class="fin-income-plus">+</span><span id="fin-income-sum" class="fin-sum"></span></button>
+        <div class="fin-body scroll">
+          <div id="fin-list" class="fin-list"></div>
+          <div id="fin-pinned">
+            <div class="fin-row fin-total"><span class="fin-name">всего</span><span id="fin-total-sum" class="fin-sum"></span></div>
+            <button id="fin-income" class="fin-row fin-income" type="button"><span class="fin-name">доходы</span><span id="fin-income-sum" class="fin-sum"></span></button>
+          </div>
         </div>
       </div>
     </section>
