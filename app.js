@@ -20,7 +20,7 @@
   const WEEKDAYS = ["ВС","ПН","ВТ","СР","ЧТ","ПТ","СБ"];
 
   /* Статусы (пользовательские наборы: task и project — раздельные) */
-  const STATUS_PALETTE = ["150,153,163","231,200,106","126,196,232","199,138,74","232,155,184","134,217,152","178,150,232","110,206,197","232,120,120"];
+  const STATUS_PALETTE = ["150,153,163","231,200,106","126,196,232","199,138,74","232,155,184","134,217,152","178,150,232","110,206,197","232,120,120","245,166,110","124,146,236","210,128,196"];
   const BUILTIN_STATUSES = [
     { id: "none",     name: "без статуса", c: "150,153,163", ord: 0,   done: false },
     { id: "waiting",  name: "ждёт начала", c: "231,200,106", ord: 1,   done: false },
@@ -51,6 +51,30 @@
   /* Проекты */
   const DEFAULT_PROJECTS = [{ emoji: "🧶", name: "Жизнь" }, { emoji: "🔨", name: "Работа" }];
   const DEFAULT_EMOJI = "⚪️";
+
+  /* Привычки: дефолтные для новых пользователей */
+  const DEFAULT_HABITS = [
+    { emoji: "📘", name: "Читать", color: STATUS_PALETTE[2] },
+    { emoji: "🏓", name: "Спорт", color: STATUS_PALETTE[4] },
+    { emoji: "🍏", name: "Диета", color: STATUS_PALETTE[5] },
+  ];
+
+  /* Финансы: дефолтные категории + деньги в целых копейках */
+  const DEFAULT_FIN_CATEGORIES = [
+    { emoji: "🏠", name: "Жильё", color: STATUS_PALETTE[2] },
+    { emoji: "🍏", name: "Продукты", color: STATUS_PALETTE[5] },
+    { emoji: "🍽️", name: "Кафе", color: STATUS_PALETTE[9] },
+    { emoji: "🚗", name: "Машина", color: STATUS_PALETTE[3] },
+    { emoji: "👕", name: "Покупки", color: STATUS_PALETTE[4] },
+    { emoji: "🚌", name: "Транспорт", color: STATUS_PALETTE[6] },
+    { emoji: "📱", name: "Связь", color: STATUS_PALETTE[7] },
+    { emoji: "🎬", name: "Развлечения", color: STATUS_PALETTE[11] },
+  ];
+  function parseMoney(str) { const n = parseFloat(String(str == null ? "" : str).replace(",", ".").replace(/\s/g, "")); return isNaN(n) ? null : Math.round(n * 100); }
+  function fmtMoney(minor) { return (Math.round(minor || 0) / 100).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function monthStartISO() { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString(); }
+  const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+  function fmtDateLong(iso) { const d = new Date(iso); return `${d.getDate()} ${MONTHS_GEN[d.getMonth()]} ${d.getFullYear()}`; }
   let projectsCache = [];
   function projById(id) { return id ? projectsCache.find((p) => p.id === id) || null : null; }
   function projEmoji(p) { return (p && p.emoji) ? p.emoji : DEFAULT_EMOJI; }
@@ -235,7 +259,11 @@
       if (!d.projectsV1) { d.projects = DEFAULT_PROJECTS.map((p) => ({ id: uid(), emoji: p.emoji, name: p.name, status: "progress" })); d.projectsV1 = true; delete d.tags; delete d.tagsV2; }
       d.projects = d.projects || [];
       d.notes = d.notes || [];
+      if (!d.habitsV1) { if (!d.habits || !d.habits.length) { d.habits = DEFAULT_HABITS.map((h) => ({ id: uid(), created_at: new Date().toISOString(), emoji: h.emoji, name: h.name, color: h.color, progress: 0, week: null })); } d.habitsV1 = true; }
       d.habits = d.habits || [];
+      d.finTx = d.finTx || [];
+      if (!d.finCatV1) { d.finCategories = DEFAULT_FIN_CATEGORIES.map((c, i) => ({ id: uid(), created_at: new Date().toISOString(), emoji: c.emoji, name: c.name, color: c.color, sort: i })); d.finCatV1 = true; }
+      d.finCategories = d.finCategories || [];
       if (!d.statusesV1) { d.taskStatuses = seedStatuses(); d.projectStatuses = seedStatuses(); d.statusesV1 = true; }
       d.taskStatuses = d.taskStatuses || seedStatuses();
       d.projectStatuses = d.projectStatuses || seedStatuses();
@@ -318,7 +346,11 @@
       const d = Local.ensure(); d.notes = d.notes.filter((x) => x.id !== id); Local.write(d);
     },
     async habits() {
-      if (sb && this.userId) { const { data } = await sb.from("habits").select("*").eq("user_id", this.userId).order("created_at"); return data || []; }
+      if (sb && this.userId) {
+        const { data } = await sb.from("habits").select("*").eq("user_id", this.userId).order("created_at");
+        if (!data || !data.length) { const created = []; for (const h of DEFAULT_HABITS) { const row = await this.addHabit(h); if (row) created.push(row); } return created; }
+        return data;
+      }
       return Local.ensure().habits.slice();
     },
     async addHabit({ emoji, name, color }) {
@@ -333,6 +365,41 @@
     async deleteHabit(id) {
       if (sb && this.userId) { await sb.from("habits").delete().eq("id", id); return; }
       const d = Local.ensure(); d.habits = d.habits.filter((x) => x.id !== id); Local.write(d);
+    },
+    /* Финансы */
+    async finCategories() {
+      if (sb && this.userId) {
+        const { data } = await sb.from("fin_categories").select("*").eq("user_id", this.userId).order("sort");
+        if (!data || !data.length) { const created = []; for (let i = 0; i < DEFAULT_FIN_CATEGORIES.length; i++) { const c = DEFAULT_FIN_CATEGORIES[i]; const row = await this.addFinCategory({ ...c, sort: i }); if (row) created.push(row); } return created; }
+        return data;
+      }
+      return Local.ensure().finCategories.slice().sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
+    },
+    async addFinCategory({ emoji, name, color, sort }) {
+      const base = { emoji: emoji || null, name: name || "", color: color || null, sort: sort == null ? 0 : sort };
+      if (sb && this.userId) { const { data } = await sb.from("fin_categories").insert({ ...base, user_id: this.userId }).select().single(); return data; }
+      const d = Local.ensure(); const row = { id: uid(), created_at: new Date().toISOString(), ...base }; d.finCategories.push(row); Local.write(d); return row;
+    },
+    async updateFinCategory(id, fields) {
+      if (sb && this.userId) { await sb.from("fin_categories").update(fields).eq("id", id); return; }
+      const d = Local.ensure(); const c = d.finCategories.find((x) => x.id === id); if (c) Object.assign(c, fields); Local.write(d);
+    },
+    async deleteFinCategory(id) {
+      if (sb && this.userId) { await sb.from("fin_tx").update({ category_id: null }).eq("category_id", id); await sb.from("fin_categories").delete().eq("id", id); return; }
+      const d = Local.ensure(); d.finTx.forEach((t) => { if (t.category_id === id) t.category_id = null; }); d.finCategories = d.finCategories.filter((x) => x.id !== id); Local.write(d);
+    },
+    async finTx(fromISO, toISO) {
+      if (sb && this.userId) { const { data } = await sb.from("fin_tx").select("*").eq("user_id", this.userId).gte("created_at", fromISO).lte("created_at", toISO); return data || []; }
+      return Local.ensure().finTx.filter((t) => t.created_at >= fromISO && t.created_at <= toISO);
+    },
+    async addFinTx({ kind, amount_minor, category_id }) {
+      const base = { kind: kind || "expense", amount_minor: Math.round(amount_minor || 0), category_id: category_id || null };
+      if (sb && this.userId) { const { data } = await sb.from("fin_tx").insert({ ...base, user_id: this.userId }).select().single(); return data; }
+      const d = Local.ensure(); const row = { id: uid(), created_at: new Date().toISOString(), ...base }; d.finTx.push(row); Local.write(d); return row;
+    },
+    async deleteFinTx(id) {
+      if (sb && this.userId) { await sb.from("fin_tx").delete().eq("id", id); return; }
+      const d = Local.ensure(); d.finTx = d.finTx.filter((x) => x.id !== id); Local.write(d);
     },
     async settings() { if (sb && this.userId) { const { data } = await sb.from("settings").select("*").eq("user_id", this.userId).single(); return data || { theme: "dark", count: 5 }; } return Local.ensure().settings; },
     async saveSettings(s) { if (sb && this.userId) { await sb.from("settings").upsert({ user_id: this.userId, ...s }); return; } const d = Local.ensure(); d.settings = { ...d.settings, ...s }; Local.write(d); },
@@ -658,33 +725,42 @@
 
   /* ---------- Навигация ---------- */
   let currentView = "tasks";
+  let filtersOpen = false;   // фильтры на странице задач скрыты по умолчанию (не сохраняется между запусками)
   const PAGE_TITLES = { tasks: "задачи", projects: "проекты", notes: "заметки", finance: "финансы", habits: "привычки" };
   function showView(name) {
     currentView = name;
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
     const isForm = name === "task" || name === "project" || name === "note";
-    $("#back-btn").hidden = !isForm;
+    const isSub = name === "fincat";   // под-страница: назад + свой заголовок, без нижнего меню
+    $("#back-btn").hidden = !(isForm || isSub);
     $("#page-title").hidden = isForm;
-    if (!isForm) $("#page-title").textContent = PAGE_TITLES[name] || "";
-    $("#page-nav").hidden = isForm;
-    $("#fab").hidden = !(name === "tasks" || name === "projects" || name === "notes" || name === "habits");
-    if (!isForm) { let activeItem = null; $$("#page-nav .nav-item").forEach((b) => { const on = b.dataset.view === name; b.classList.toggle("active", on); if (on) activeItem = b; }); if (activeItem) requestAnimationFrame(() => activeItem.scrollIntoView({ inline: "nearest", block: "nearest" })); }
+    if (name === "fincat") $("#page-title").textContent = finCatViewTitle;
+    else if (!isForm) $("#page-title").textContent = PAGE_TITLES[name] || "";
+    $("#filter-toggle").hidden = name !== "tasks";
+    if (name === "tasks") $("#task-filters").hidden = !filtersOpen;
+    $("#page-nav").hidden = isForm || isSub;
+    $("#fab").hidden = !(name === "tasks" || name === "projects" || name === "notes" || name === "habits" || name === "finance" || name === "fincat");
+    if (!isForm && !isSub) { let activeItem = null; $$("#page-nav .nav-item").forEach((b) => { const on = b.dataset.view === name; b.classList.toggle("active", on); if (on) activeItem = b; }); if (activeItem) requestAnimationFrame(() => activeItem.scrollIntoView({ inline: "nearest", block: "nearest" })); }
     if (name === "tasks") renderTasks();
     else if (name === "projects") renderKanban();
     else if (name === "project") renderProjectTasks();
     else if (name === "notes") renderNotes();
     else if (name === "habits") renderHabits();
+    else if (name === "finance") renderFinance();
+    else if (name === "fincat") renderFinCatPage();
   }
   $$("#page-nav .nav-item").forEach((b) => b.addEventListener("click", () => { if (currentView !== b.dataset.view) showView(b.dataset.view); }));
+  $("#filter-toggle").addEventListener("click", () => { filtersOpen = !filtersOpen; $("#task-filters").hidden = !filtersOpen; });
   function goBack() {
     const m = $$(".modal").find((x) => !x.hidden); if (m) { m.hidden = true; return; }
     if (currentView === "task") { leaveTask(); return; }
     if (currentView === "project") { leaveProject(); return; }
     if (currentView === "note") { leaveNote(); return; }
+    if (currentView === "fincat") { showView("finance"); return; }
   }
   $("#back-btn").addEventListener("click", goBack);
   $("#brand-home").addEventListener("click", () => showView("tasks"));
-  $("#fab").addEventListener("click", () => { if (currentView === "projects") newProject(); else if (currentView === "notes") newNote(); else if (currentView === "habits") newHabit(); else newTask(); });
+  $("#fab").addEventListener("click", () => { if (currentView === "projects") newProject(); else if (currentView === "notes") newNote(); else if (currentView === "habits") newHabit(); else if (currentView === "finance") openFinTx(); else if (currentView === "fincat") { finCatViewId === "__income__" ? openFinTx({ incomeOnly: true }) : openFinTx({ preCat: finCatViewId }); } else newTask(); });
   (function () { const main = $(".main"); let sx = 0, sy = 0, on = false;
     main.addEventListener("touchstart", (e) => { if (e.touches.length !== 1 || e.target.closest(".swipe-row") || e.target.closest("[contenteditable]")) { on = false; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true });
     main.addEventListener("touchmove", (e) => { if (!on) return; if (Math.abs(e.touches[0].clientY - sy) > Math.abs(e.touches[0].clientX - sx)) on = false; }, { passive: true });
@@ -710,7 +786,7 @@
   function taskRow(t, opts) {
     opts = opts || {};
     const st = statusOf(t); const p = projById(t.project_id);
-    const projCell = opts.showProjectPill ? `<span class="proj-pill task-proj ${p ? "" : "is-empty"}" data-act="project">${projPillInner(p)}</span>` : "";
+    const projCell = opts.showProjectPill ? `<span class="proj-pill task-proj ${p ? "" : "is-empty"}" data-act="project"><span class="proj-emoji">${p ? projEmoji(p) : DEFAULT_EMOJI}</span></span>` : "";
     const dateCell = opts.showDate ? `<button class="task-date" data-act="time">${t.due_date ? dayHead(t.due_date.slice(0, 10)) : "—"}</button>` : "";
     return `<div class="task swipeable" data-id="${t.id}">
       <div class="swipe-del">${TRASH_SVG}</div>
@@ -1067,6 +1143,175 @@
   });
   $("#habit-cancel").addEventListener("click", () => ($("#habit-modal").hidden = true));
   $("#habit-modal").addEventListener("click", (e) => { if (e.target.id === "habit-modal") $("#habit-modal").hidden = true; });
+
+  /* ---------- ФИНАНСЫ ---------- */
+  let finPeriod = { mode: "month" };   // month | range {from,to,label}. Общий для главной и страницы категории. Не сохраняется между запусками
+  let finSort = false;                 // сортировка категорий по сумме (главная)
+  let finCatSort = false;              // сортировка операций по сумме (страница категории)
+  let finCatViewId = null, finCatViewTitle = "финансы";
+  let finCatsCache = [];
+  function finRange() { return finPeriod.mode === "range" ? { from: finPeriod.from, to: finPeriod.to } : { from: monthStartISO(), to: new Date().toISOString() }; }
+  function renderCurrentFin() { if (currentView === "fincat") renderFinCatPage(); else renderFinance(); }
+  function syncFinFilters() {
+    const label = finPeriod.mode === "range" ? (finPeriod.label || "") : "";
+    ["#fin-range-label", "#fincat-range-label"].forEach((id) => { const el = $(id); if (el) el.textContent = label; });
+    ["#fin-range", "#fincat-range"].forEach((id) => { const el = $(id); if (el) el.classList.toggle("chip--ico", finPeriod.mode !== "range"); });
+    ["#fin-month", "#fincat-month"].forEach((id) => { const el = $(id); if (el) el.classList.toggle("is-on", finPeriod.mode === "month"); });
+    ["#fin-range", "#fincat-range"].forEach((id) => { const el = $(id); if (el) el.classList.toggle("is-on", finPeriod.mode === "range"); });
+  }
+  function finSetMonth() { finPeriod = { mode: "month" }; syncFinFilters(); renderCurrentFin(); }
+  async function renderFinance() {
+    const cats = await Store.finCategories(); finCatsCache = cats;
+    const { from, to } = finRange();
+    const tx = await Store.finTx(from, to);
+    const catSum = {}; let totalExp = 0, totalInc = 0;
+    tx.forEach((t) => { const a = Math.round(t.amount_minor || 0); if (t.kind === "income") totalInc += a; else { totalExp += a; if (t.category_id) catSum[t.category_id] = (catSum[t.category_id] || 0) + a; } });
+    let rows = cats.map((c) => ({ c, sum: catSum[c.id] || 0 }));
+    if (finSort) rows = rows.slice().sort((a, b) => b.sum - a.sum);
+    const maxSum = rows.reduce((m, r) => Math.max(m, r.sum), 0);
+    $("#fin-list").innerHTML = rows.map((r) => {
+      const pct = maxSum > 0 ? (r.sum / maxSum * 100) : 0;
+      return `<div class="fin-row fin-cat" data-id="${r.c.id}">
+        <div class="fin-title"><span class="fin-emoji">${r.c.emoji || DEFAULT_EMOJI}</span><span class="fin-name">${esc(r.c.name)}</span></div>
+        <div class="fin-bar-wrap"><div class="fin-bar" style="width:${pct.toFixed(3)}%; background:rgba(${r.c.color || STATUS_PALETTE[0]}, .6)"></div></div>
+        <span class="fin-cat-sum">${fmtMoney(r.sum)}</span>
+      </div>`;
+    }).join("");
+    $("#fin-total-sum").textContent = fmtMoney(totalExp);
+    $("#fin-income-sum").textContent = fmtMoney(totalInc);
+    syncFinFilters();
+    $("#fin-sort").classList.toggle("is-on", finSort);
+    // иконка сортировки: активна — по убыванию (длинная-средняя-короткая); дефолт — «случайный» порядок
+    const sp = $("#fin-sort svg path"); if (sp) sp.setAttribute("d", finSort ? "M4 6h16M4 12h11M4 18h6" : "M4 6h16M4 12h6M4 18h11");
+  }
+  $("#fin-month").addEventListener("click", finSetMonth);
+  $("#fin-sort").addEventListener("click", () => { finSort = !finSort; renderFinance(); });
+  // тап по строке категории/доходам → страница со списком операций (не создание)
+  $("#fin-income").addEventListener("click", () => openFinCatPage("__income__"));
+  $("#fin-list").addEventListener("click", (e) => { const row = e.target.closest(".fin-cat"); if (!row) return; openFinCatPage(row.dataset.id); });
+
+  /* Страница категории: список операций (дата + сумма), свайп-удаление, свой фильтр периода */
+  async function openFinCatPage(id) {
+    finCatViewId = id; finCatSort = false;
+    if (id === "__income__") finCatViewTitle = "доходы";
+    else { const cats = await Store.finCategories(); const c = cats.find((x) => x.id === id); finCatViewTitle = c ? c.name : "категория"; }
+    showView("fincat");
+  }
+  async function renderFinCatPage() {
+    const { from, to } = finRange();
+    const tx = await Store.finTx(from, to);
+    const isIncome = finCatViewId === "__income__";
+    let list = tx.filter((t) => (isIncome ? t.kind === "income" : (t.kind !== "income" && t.category_id === finCatViewId)));
+    list = list.slice().sort(finCatSort ? (a, b) => (b.amount_minor || 0) - (a.amount_minor || 0) : (a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    $("#fincat-empty").hidden = list.length > 0;
+    $("#fincat-list").innerHTML = list.map((t) => `<div class="fincat-row swipeable" data-id="${t.id}">
+      <div class="swipe-del">${TRASH_SVG}</div>
+      <div class="swipe-row fincat-txrow"><span class="fincat-date">${fmtDateLong(t.created_at)}</span><span class="fincat-amount">${fmtMoney(t.amount_minor)}</span></div>
+    </div>`).join("");
+    $$("#fincat-list .fincat-row").forEach((el) => attachSwipe(el, async () => { await Store.deleteFinTx(el.dataset.id); renderFinCatPage(); }));
+    syncFinFilters();
+    $("#fincat-sort").classList.toggle("is-on", finCatSort);
+    const sp = $("#fincat-sort svg path"); if (sp) sp.setAttribute("d", finCatSort ? "M4 6h16M4 12h11M4 18h6" : "M4 6h16M4 12h6M4 18h11");
+  }
+  $("#fincat-month").addEventListener("click", finSetMonth);
+  $("#fincat-range").addEventListener("click", () => openFinRange());
+  $("#fincat-sort").addEventListener("click", () => { finCatSort = !finCatSort; renderFinCatPage(); });
+
+  /* Окно создания операции */
+  let finTxKind = "expense", finTxCatId = null, finTxIncomeOnly = false;
+  function renderFinTxCats() {
+    const add = `<button type="button" class="proj-add-row" id="fintx-add-cat" aria-label="Новая категория"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 6.5v11M6.5 12h11"/></svg></button>`;
+    $("#fintx-cats").innerHTML = add + finCatsCache.map((c) => `<button type="button" class="proj-pill fintx-cat ${c.id === finTxCatId ? "is-cur" : ""}" data-id="${c.id}"><span class="proj-emoji">${c.emoji || DEFAULT_EMOJI}</span><span class="proj-name">${esc(c.name)}</span></button>`).join("");
+    $("#fintx-add-cat").addEventListener("click", () => openFinCat());
+  }
+  async function openFinTx(opts) {
+    opts = opts || {}; finTxIncomeOnly = !!opts.incomeOnly; finTxKind = finTxIncomeOnly ? "income" : "expense"; finTxCatId = opts.preCat || null;
+    finCatsCache = await Store.finCategories();
+    $("#fintx-amount").value = "";
+    $("#fintx-kind").hidden = finTxIncomeOnly;
+    $("#fintx-kind-expense").classList.toggle("is-on", finTxKind === "expense"); $("#fintx-kind-income").classList.toggle("is-on", finTxKind === "income");
+    $("#fintx-cats").hidden = finTxKind === "income"; if (finTxKind !== "income") renderFinTxCats();
+    $("#fintx-modal").hidden = false; setTimeout(() => $("#fintx-amount").focus(), 30);
+  }
+  $$("#fintx-kind .kind-btn").forEach((b) => b.addEventListener("click", () => {
+    finTxKind = b.dataset.kind; $$("#fintx-kind .kind-btn").forEach((x) => x.classList.toggle("is-on", x === b));
+    $("#fintx-cats").hidden = finTxKind === "income"; if (finTxKind !== "income") renderFinTxCats();
+  }));
+  $("#fintx-cats").addEventListener("click", (e) => {
+    if (DRAG.active) return;
+    const p = e.target.closest(".fintx-cat"); if (!p) return; const id = p.dataset.id;
+    if (finTxCatId === id) { const c = finCatsCache.find((x) => x.id === id); if (c) openFinCat({ edit: c }); return; }  // повторный тап по выбранной → редактирование категории
+    finTxCatId = id; $$("#fintx-cats .fintx-cat").forEach((x) => x.classList.toggle("is-cur", x === p));
+  });
+  makeSortable($("#fintx-cats"), { itemSelector: ".fintx-cat", axis: "wrap", onDrop: async (d) => { for (let i = 0; i < d.orderedIds.length; i++) { const c = finCatsCache.find((x) => x.id === d.orderedIds[i]); if (c && c.sort !== i) { c.sort = i; await Store.updateFinCategory(c.id, { sort: i }); } } finCatsCache.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0)); renderFinance(); } });
+  $("#fintx-ok").addEventListener("click", async () => {
+    const minor = parseMoney($("#fintx-amount").value); if (minor == null || minor <= 0) { $("#fintx-amount").focus(); return; }
+    if (finTxKind === "expense" && !finTxCatId) { return; }   // для расхода нужна категория
+    await Store.addFinTx({ kind: finTxKind, amount_minor: minor, category_id: finTxKind === "income" ? null : finTxCatId });
+    $("#fintx-modal").hidden = true; renderCurrentFin();
+  });
+  $("#fintx-cancel").addEventListener("click", () => ($("#fintx-modal").hidden = true));
+  $("#fintx-modal").addEventListener("click", (e) => { if (e.target.id === "fintx-modal") $("#fintx-modal").hidden = true; });
+
+  /* Окно создания/редактирования категории расхода */
+  let finCatEmoji = "", finCatColor = STATUS_PALETTE[0], finCatEditId = null;
+  function renderFinCatEmoji() { $("#fincat-emoji").textContent = finCatEmoji || DEFAULT_EMOJI; $("#fincat-emoji").classList.toggle("is-empty", !finCatEmoji); }
+  function renderFinCatSwatches() {
+    $("#fincat-swatches").innerHTML = STATUS_PALETTE.map((c) => `<button type="button" class="swatch ${c === finCatColor ? "is-cur" : ""}" data-c="${c}" style="--c:${c}"><span class="status-dot"></span></button>`).join("");
+    $$("#fincat-swatches .swatch").forEach((b) => b.addEventListener("click", () => { finCatColor = b.dataset.c; renderFinCatSwatches(); }));
+  }
+  $("#fincat-emoji").addEventListener("click", () => openEmojiModal(finCatEmoji, (em) => { finCatEmoji = em; renderFinCatEmoji(); }));
+  function openFinCat(opts) {
+    const ed = (opts && opts.edit) || null; finCatEditId = ed ? ed.id : null;
+    finCatEmoji = ed ? (ed.emoji || "") : ""; finCatColor = ed ? (ed.color || STATUS_PALETTE[0]) : STATUS_PALETTE[0];
+    renderFinCatEmoji(); renderFinCatSwatches(); $("#fincat-name").value = ed ? (ed.name || "") : "";
+    $("#fincat-modal .modal-title").textContent = ed ? "Категория" : "Новая категория"; $("#fincat-ok").textContent = ed ? "Сохранить" : "Создать";
+    $("#fincat-modal").hidden = false; setTimeout(() => $("#fincat-name").focus(), 30);
+  }
+  $("#fincat-ok").addEventListener("click", async () => {
+    const name = ($("#fincat-name").value || "").trim(); if (!name) { $("#fincat-name").focus(); return; }
+    if (finCatEditId) { await Store.updateFinCategory(finCatEditId, { emoji: finCatEmoji || null, name, color: finCatColor }); }
+    else { const sort = finCatsCache.reduce((m, c) => Math.max(m, c.sort == null ? 0 : c.sort), -1) + 1; const row = await Store.addFinCategory({ emoji: finCatEmoji, name, color: finCatColor, sort }); if (row) finTxCatId = row.id; }
+    finCatsCache = await Store.finCategories();
+    $("#fincat-modal").hidden = true; if (!$("#fintx-cats").hidden) renderFinTxCats(); renderCurrentFin();
+  });
+  $("#fincat-cancel").addEventListener("click", () => ($("#fincat-modal").hidden = true));
+  $("#fincat-modal").addEventListener("click", (e) => { if (e.target.id === "fincat-modal") $("#fincat-modal").hidden = true; });
+
+  /* Выбор периода (диапазон дат) */
+  const finR = { y: 0, m: 0, start: null, end: null };
+  function drawFinRange() {
+    $("#finrange-title").textContent = `${MONTHS[finR.m]} ${finR.y}`;
+    const offset = (new Date(finR.y, finR.m, 1).getDay() + 6) % 7; const days = new Date(finR.y, finR.m + 1, 0).getDate();
+    let html = ""; for (let i = 0; i < offset; i++) html += `<span class="cal-day empty"></span>`;
+    for (let d = 1; d <= days; d++) { const ds = `${finR.y}-${pad(finR.m + 1)}-${pad(d)}`; const cls = ["cal-day"]; if (ds === finR.start || ds === finR.end) cls.push("sel"); else if (finR.start && finR.end && ds > finR.start && ds < finR.end) cls.push("in-range"); html += `<button type="button" class="${cls.join(" ")}" data-d="${ds}">${d}</button>`; }
+    $("#finrange-grid").innerHTML = html;
+    $$("#finrange-grid .cal-day[data-d]").forEach((b) => b.addEventListener("click", () => {
+      const ds = b.dataset.d;
+      if (!finR.start || (finR.start && finR.end)) { finR.start = ds; finR.end = null; }
+      else { if (ds < finR.start) { finR.end = finR.start; finR.start = ds; } else finR.end = ds; }
+      $("#finrange-hint").textContent = finR.end ? "период выбран" : "выберите конец периода";
+      drawFinRange();
+    }));
+  }
+  function openFinRange() {
+    const base = finPeriod.mode === "range" && finPeriod.from ? finPeriod.from.slice(0, 10).split("-") : [new Date().getFullYear(), new Date().getMonth() + 1];
+    finR.y = +base[0]; finR.m = +base[1] - 1; finR.start = null; finR.end = null;
+    $("#finrange-hint").textContent = "выберите начало периода"; drawFinRange(); $("#finrange-modal").hidden = false;
+  }
+  $("#fin-range").addEventListener("click", openFinRange);
+  $("#finrange-prev").addEventListener("click", () => { finR.m--; if (finR.m < 0) { finR.m = 11; finR.y--; } drawFinRange(); });
+  $("#finrange-next").addEventListener("click", () => { finR.m++; if (finR.m > 11) { finR.m = 0; finR.y++; } drawFinRange(); });
+  $("#finrange-cancel").addEventListener("click", () => ($("#finrange-modal").hidden = true));
+  $("#finrange-modal").addEventListener("click", (e) => { if (e.target.id === "finrange-modal") $("#finrange-modal").hidden = true; });
+  $("#finrange-ok").addEventListener("click", () => {
+    if (!finR.start) { $("#finrange-modal").hidden = true; return; }
+    const s = finR.start, e = finR.end || finR.start;
+    const fmt = (x) => { const p = x.split("-"); return `${p[2]}.${p[1]}`; };
+    finPeriod = { mode: "range", from: new Date(s + "T00:00:00").toISOString(), to: new Date(e + "T23:59:59").toISOString(), label: `${fmt(s)}–${fmt(e)}` };
+    syncFinFilters();
+    $("#finrange-modal").hidden = true; renderCurrentFin();
+  });
 
   /* ---------- Аккаунт ---------- */
   $("#account-btn").addEventListener("click", async () => {
