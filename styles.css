@@ -157,11 +157,16 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .topbar{ display:flex; align-items:center; justify-content:space-between; padding:calc(var(--safe-top) + 12px) 18px 6px; flex:none; }
 .topbar-actions{ display:flex; gap:0; }
 .subhead{ display:flex; align-items:flex-end; gap:6px; padding:16px 18px 10px; flex:none; min-height:44px; }
-/* Навигация по страницам */
-.page-nav{ display:flex; align-items:flex-end; gap:16px; flex:1; min-width:0; min-height:calc(var(--fs-title) * 1.5 * 1.25); overflow-x:auto; overflow-y:hidden; padding-right:28px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+/* Навигация по страницам — круглые иконки, у активной раскрывается ярлык */
+.page-nav{ display:flex; align-items:center; justify-content:center; gap:8px; flex:1; min-width:0; min-height:44px; overflow-x:auto; overflow-y:hidden; padding:0 8px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
 .page-nav::-webkit-scrollbar{ display:none; }
-.nav-item{ flex:none; background:transparent; border:none; padding:0; cursor:pointer; font-family:var(--font-title); font-weight:600; text-transform:lowercase; letter-spacing:.01em; color:var(--fg); white-space:nowrap; font-size:calc(var(--fs-title) * 1.5 * .66); opacity:.5; }
-.nav-item.active{ opacity:1; cursor:default; }
+.nav-item{ flex:none; display:inline-flex; align-items:center; height:44px; background:var(--field-bg); border:none; border-radius:999px; color:var(--fg); cursor:pointer; padding:0; overflow:hidden; }
+.nav-ico{ flex:none; width:44px; height:44px; display:inline-flex; align-items:center; justify-content:center; }
+.nav-ico svg{ width:21px; height:21px; }
+.nav-label{ max-width:0; opacity:0; overflow:hidden; white-space:nowrap; font-family:var(--font-body); font-size:14px; font-weight:500; padding:0; transition:max-width .28s ease, opacity .18s ease, padding .28s ease; }
+.nav-item.active{ cursor:default; }
+.nav-item.active .nav-label{ max-width:130px; opacity:1; padding:0 2px 0 16px; }
+.coming-soon{ padding:30px 4px; }
 .back-btn{ background:transparent; border:none; color:var(--fg); font-size:30px; line-height:1; width:34px; height:34px; margin-left:-6px; display:flex; align-items:center; justify-content:center; }
 .main{ flex:1; min-height:0; position:relative; }
 .view{ position:absolute; inset:0; display:flex; flex-direction:column; overflow:hidden; }
@@ -307,10 +312,10 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
     position:absolute; left:0; right:0;
     bottom:calc(var(--safe-bottom) + 20px);
     z-index:30;
-    padding-left:18px; padding-right:28px;
+    padding:0 10px;
   }
   /* в списках (меню видно) верхняя шапка-подзаголовок пустая — не оставляем зазор */
   .subhead:has(#page-nav:not([hidden])){ min-height:0; padding-top:8px; padding-bottom:0; }
   /* контент списков не заезжает под нижнее меню */
-  #view-tasks, #view-projects, #view-notes{ padding-bottom:calc(var(--safe-bottom) + 78px); }
+  #view-tasks, #view-projects, #view-notes, #view-finance, #view-habits{ padding-bottom:calc(var(--safe-bottom) + 78px); }
 }
