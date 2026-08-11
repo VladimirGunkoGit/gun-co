@@ -177,16 +177,19 @@
       <div class="pane"><p class="empty coming-soon">Финансы — скоро</p></div>
     </section>
 
-    <!-- ПРИВЫЧКИ (заглушка) -->
+    <!-- ПРИВЫЧКИ -->
     <section id="view-habits" class="view" hidden>
-      <div class="pane"><p class="empty coming-soon">Привычки — скоро</p></div>
+      <div class="pane">
+        <div id="habit-list" class="habit-list scroll"></div>
+        <p id="habits-empty" class="empty" hidden>Пока нет Привычек</p>
+      </div>
     </section>
 
   </main>
 
   <nav id="page-nav" class="page-nav">
     <button class="nav-item active" data-view="tasks" type="button" aria-label="Задачи"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><path d="M8 12.2l2.6 2.6L16.5 9"/></svg></span></button>
-    <button class="nav-item" data-view="projects" type="button" aria-label="Проекты"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="5" height="16" rx="1.6"/><rect x="10.5" y="4" width="5" height="10.5" rx="1.6"/><rect x="17.5" y="4" width="3" height="7" rx="1.5"/></svg></span></button>
+    <button class="nav-item" data-view="projects" type="button" aria-label="Проекты"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></span></button>
     <button class="nav-item" data-view="notes" type="button" aria-label="Заметки"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4.5"/></svg></span></button>
     <button class="nav-item" data-view="finance" type="button" aria-label="Финансы"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10.5h18"/><circle cx="16.5" cy="14.5" r="1.3"/></svg></span></button>
     <button class="nav-item" data-view="habits" type="button" aria-label="Привычки"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12a7.5 7.5 0 0112.6-5.5l2.2 2"/><path d="M19.5 12a7.5 7.5 0 01-12.6 5.5l-2.2-2"/><path d="M19.2 4.4v4.2h-4.2M4.8 19.6v-4.2h4.2"/></svg></span></button>
@@ -317,6 +320,22 @@
     <div class="form-actions">
       <button id="projform-ok" class="btn btn--solid" type="button">Добавить</button>
       <button id="projform-cancel" class="btn" type="button">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<!-- Создание Привычки -->
+<div id="habit-modal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-title">Новая Привычка</div>
+    <div class="projform">
+      <button id="habit-emoji" class="projform-emoji" type="button" aria-label="Выбрать эмодзи"></button>
+      <input id="habit-name" class="field" type="text" placeholder="название привычки" maxlength="40" aria-label="Название" />
+    </div>
+    <div id="habit-swatches" class="statusform-swatches"></div>
+    <div class="form-actions">
+      <button id="habit-ok" class="btn btn--solid" type="button">Создать</button>
+      <button id="habit-cancel" class="btn" type="button">Отмена</button>
     </div>
   </div>
 </div>

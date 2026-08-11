@@ -235,6 +235,7 @@
       if (!d.projectsV1) { d.projects = DEFAULT_PROJECTS.map((p) => ({ id: uid(), emoji: p.emoji, name: p.name, status: "progress" })); d.projectsV1 = true; delete d.tags; delete d.tagsV2; }
       d.projects = d.projects || [];
       d.notes = d.notes || [];
+      d.habits = d.habits || [];
       if (!d.statusesV1) { d.taskStatuses = seedStatuses(); d.projectStatuses = seedStatuses(); d.statusesV1 = true; }
       d.taskStatuses = d.taskStatuses || seedStatuses();
       d.projectStatuses = d.projectStatuses || seedStatuses();
@@ -315,6 +316,23 @@
     async deleteNote(id) {
       if (sb && this.userId) { await sb.from("notes").delete().eq("id", id); return; }
       const d = Local.ensure(); d.notes = d.notes.filter((x) => x.id !== id); Local.write(d);
+    },
+    async habits() {
+      if (sb && this.userId) { const { data } = await sb.from("habits").select("*").eq("user_id", this.userId).order("created_at"); return data || []; }
+      return Local.ensure().habits.slice();
+    },
+    async addHabit({ emoji, name, color }) {
+      const base = { emoji: emoji || null, name: name || "", color: color || null, progress: 0, week: null };
+      if (sb && this.userId) { const { data } = await sb.from("habits").insert({ ...base, user_id: this.userId }).select().single(); return data; }
+      const d = Local.ensure(); const row = { id: uid(), created_at: new Date().toISOString(), ...base }; d.habits.push(row); Local.write(d); return row;
+    },
+    async updateHabit(id, fields) {
+      if (sb && this.userId) { await sb.from("habits").update(fields).eq("id", id); return; }
+      const d = Local.ensure(); const h = d.habits.find((x) => x.id === id); if (h) Object.assign(h, fields); Local.write(d);
+    },
+    async deleteHabit(id) {
+      if (sb && this.userId) { await sb.from("habits").delete().eq("id", id); return; }
+      const d = Local.ensure(); d.habits = d.habits.filter((x) => x.id !== id); Local.write(d);
     },
     async settings() { if (sb && this.userId) { const { data } = await sb.from("settings").select("*").eq("user_id", this.userId).single(); return data || { theme: "dark", count: 5 }; } return Local.ensure().settings; },
     async saveSettings(s) { if (sb && this.userId) { await sb.from("settings").upsert({ user_id: this.userId, ...s }); return; } const d = Local.ensure(); d.settings = { ...d.settings, ...s }; Local.write(d); },
@@ -649,12 +667,13 @@
     $("#page-title").hidden = isForm;
     if (!isForm) $("#page-title").textContent = PAGE_TITLES[name] || "";
     $("#page-nav").hidden = isForm;
-    $("#fab").hidden = !(name === "tasks" || name === "projects" || name === "notes");
+    $("#fab").hidden = !(name === "tasks" || name === "projects" || name === "notes" || name === "habits");
     if (!isForm) { let activeItem = null; $$("#page-nav .nav-item").forEach((b) => { const on = b.dataset.view === name; b.classList.toggle("active", on); if (on) activeItem = b; }); if (activeItem) requestAnimationFrame(() => activeItem.scrollIntoView({ inline: "nearest", block: "nearest" })); }
     if (name === "tasks") renderTasks();
     else if (name === "projects") renderKanban();
     else if (name === "project") renderProjectTasks();
     else if (name === "notes") renderNotes();
+    else if (name === "habits") renderHabits();
   }
   $$("#page-nav .nav-item").forEach((b) => b.addEventListener("click", () => { if (currentView !== b.dataset.view) showView(b.dataset.view); }));
   function goBack() {
@@ -665,7 +684,7 @@
   }
   $("#back-btn").addEventListener("click", goBack);
   $("#brand-home").addEventListener("click", () => showView("tasks"));
-  $("#fab").addEventListener("click", () => { if (currentView === "projects") newProject(); else if (currentView === "notes") newNote(); else newTask(); });
+  $("#fab").addEventListener("click", () => { if (currentView === "projects") newProject(); else if (currentView === "notes") newNote(); else if (currentView === "habits") newHabit(); else newTask(); });
   (function () { const main = $(".main"); let sx = 0, sy = 0, on = false;
     main.addEventListener("touchstart", (e) => { if (e.touches.length !== 1 || e.target.closest(".swipe-row") || e.target.closest("[contenteditable]")) { on = false; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true });
     main.addEventListener("touchmove", (e) => { if (!on) return; if (Math.abs(e.touches[0].clientY - sy) > Math.abs(e.touches[0].clientX - sx)) on = false; }, { passive: true });
@@ -998,6 +1017,56 @@
   }
   $("#n-submit").addEventListener("click", leaveNote);
   $("#n-delete").addEventListener("click", async () => { if (editingNoteId && await askConfirm("Удалить заметку?")) { await Store.deleteNote(editingNoteId); editingNoteId = null; showView("notes"); } });
+
+  /* ---------- ПРИВЫЧКИ ---------- */
+  // Неделя пн→вс; сброс в вс 23:59 = ключ недели (понедельник). Прогресс «сгорает» в новой неделе.
+  function habitWeek() { const d = new Date(); const day = (d.getDay() + 6) % 7; d.setDate(d.getDate() - day); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+  function habitProgress(h) { return h.week === habitWeek() ? Math.max(0, Math.min(7, h.progress || 0)) : 0; }
+  let habitsById = {};
+  function habitRow(h) {
+    const eff = habitProgress(h); let cells = "";
+    for (let i = 0; i < 7; i++) cells += `<span class="hb-cell${i < eff ? " on" : ""}"></span>`;
+    return `<div class="habit swipeable" data-id="${h.id}">
+      <div class="swipe-del">${TRASH_SVG}</div>
+      <div class="swipe-row habit-row">
+        <div class="hb-title"><span class="hb-emoji">${h.emoji || DEFAULT_EMOJI}</span><span class="hb-name">${esc(h.name || "")}</span></div>
+        <div class="hb-bar" style="--c:${h.color || STATUS_PALETTE[0]}">${cells}</div>
+      </div>
+    </div>`;
+  }
+  async function renderHabits() {
+    const habits = await Store.habits();
+    habitsById = {}; habits.forEach((h) => (habitsById[h.id] = h));
+    $("#habits-empty").hidden = habits.length > 0;
+    $("#habit-list").innerHTML = habits.map(habitRow).join("");
+    $$("#habit-list .habit").forEach((el) => attachSwipe(el, async () => { await Store.deleteHabit(el.dataset.id); renderHabits(); }));
+  }
+  $("#habit-list").addEventListener("click", async (e) => {
+    if (justSwiped) return;
+    const bar = e.target.closest(".hb-bar"); if (!bar) return;   // тап по заголовку — ничего
+    const row = bar.closest(".habit"); const h = habitsById[row.dataset.id]; if (!h) return;
+    const next = habitProgress(h) >= 7 ? 0 : habitProgress(h) + 1;
+    h.progress = next; h.week = habitWeek();
+    [...bar.querySelectorAll(".hb-cell")].forEach((c, i) => c.classList.toggle("on", i < next));
+    await Store.updateHabit(h.id, { progress: next, week: h.week });
+  });
+
+  /* Создание Привычки */
+  let habitFormEmoji = "", habitFormColor = STATUS_PALETTE[0];
+  function renderHabitFormEmoji() { $("#habit-emoji").textContent = habitFormEmoji || DEFAULT_EMOJI; $("#habit-emoji").classList.toggle("is-empty", !habitFormEmoji); }
+  function renderHabitSwatches() {
+    $("#habit-swatches").innerHTML = STATUS_PALETTE.map((c) => `<button type="button" class="swatch ${c === habitFormColor ? "is-cur" : ""}" data-c="${c}" style="--c:${c}"><span class="status-dot"></span></button>`).join("");
+    $$("#habit-swatches .swatch").forEach((b) => b.addEventListener("click", () => { habitFormColor = b.dataset.c; renderHabitSwatches(); }));
+  }
+  $("#habit-emoji").addEventListener("click", () => openEmojiModal(habitFormEmoji, (em) => { habitFormEmoji = em; renderHabitFormEmoji(); }));
+  function newHabit() { habitFormEmoji = ""; habitFormColor = STATUS_PALETTE[0]; renderHabitFormEmoji(); renderHabitSwatches(); $("#habit-name").value = ""; $("#habit-modal").hidden = false; setTimeout(() => $("#habit-name").focus(), 30); }
+  $("#habit-ok").addEventListener("click", async () => {
+    const name = ($("#habit-name").value || "").trim(); if (!name) { $("#habit-name").focus(); return; }
+    await Store.addHabit({ emoji: habitFormEmoji, name, color: habitFormColor });
+    $("#habit-modal").hidden = true; renderHabits();
+  });
+  $("#habit-cancel").addEventListener("click", () => ($("#habit-modal").hidden = true));
+  $("#habit-modal").addEventListener("click", (e) => { if (e.target.id === "habit-modal") $("#habit-modal").hidden = true; });
 
   /* ---------- Аккаунт ---------- */
   $("#account-btn").addEventListener("click", async () => {
