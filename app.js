@@ -640,11 +640,14 @@
 
   /* ---------- Навигация ---------- */
   let currentView = "tasks";
+  const PAGE_TITLES = { tasks: "задачи", projects: "проекты", notes: "заметки", finance: "финансы", habits: "привычки" };
   function showView(name) {
     currentView = name;
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
     const isForm = name === "task" || name === "project" || name === "note";
     $("#back-btn").hidden = !isForm;
+    $("#page-title").hidden = isForm;
+    if (!isForm) $("#page-title").textContent = PAGE_TITLES[name] || "";
     $("#page-nav").hidden = isForm;
     $("#fab").hidden = !(name === "tasks" || name === "projects" || name === "notes");
     if (!isForm) { let activeItem = null; $$("#page-nav .nav-item").forEach((b) => { const on = b.dataset.view === name; b.classList.toggle("active", on); if (on) activeItem = b; }); if (activeItem) requestAnimationFrame(() => activeItem.scrollIntoView({ inline: "nearest", block: "nearest" })); }

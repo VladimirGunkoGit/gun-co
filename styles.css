@@ -157,15 +157,16 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .topbar{ display:flex; align-items:center; justify-content:space-between; padding:calc(var(--safe-top) + 12px) 18px 6px; flex:none; }
 .topbar-actions{ display:flex; gap:0; }
 .subhead{ display:flex; align-items:flex-end; gap:6px; padding:16px 18px 10px; flex:none; min-height:44px; }
-/* Навигация по страницам — круглые иконки, у активной раскрывается ярлык */
-.page-nav{ display:flex; align-items:center; justify-content:center; gap:8px; flex:1; min-width:0; min-height:44px; overflow-x:auto; overflow-y:hidden; padding:0 8px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+/* Крупный статичный заголовок страницы (стиль прежнего меню) */
+.page-title{ font-family:var(--font-title); font-weight:600; font-size:calc(var(--fs-title) * 1.5); text-transform:lowercase; letter-spacing:.01em; color:var(--fg); white-space:nowrap; line-height:1.05; }
+/* Нижнее меню — круглые иконки без подписей; активная — контрастная */
+.page-nav{ position:absolute; left:0; right:0; bottom:calc(var(--safe-bottom) + 16px); z-index:30; display:flex; align-items:center; justify-content:safe center; gap:8px; overflow-x:auto; overflow-y:hidden; padding:0 12px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
 .page-nav::-webkit-scrollbar{ display:none; }
-.nav-item{ flex:none; display:inline-flex; align-items:center; height:44px; background:var(--field-bg); border:none; border-radius:999px; color:var(--fg); cursor:pointer; padding:0; overflow:hidden; }
-.nav-ico{ flex:none; width:44px; height:44px; display:inline-flex; align-items:center; justify-content:center; }
-.nav-ico svg{ width:21px; height:21px; }
-.nav-label{ max-width:0; opacity:0; overflow:hidden; white-space:nowrap; font-family:var(--font-body); font-size:14px; font-weight:500; padding:0; transition:max-width .28s ease, opacity .18s ease, padding .28s ease; }
+.nav-item{ flex:none; display:inline-flex; align-items:center; justify-content:center; width:66px; height:66px; background:var(--field-bg); border:none; border-radius:50%; color:var(--fg); cursor:pointer; padding:0; }
+.nav-ico{ display:inline-flex; align-items:center; justify-content:center; }
+.nav-ico svg{ width:31px; height:31px; stroke-width:.85; opacity:.5; }   /* тоньше ×2, прозрачнее ×2 */
 .nav-item.active{ cursor:default; }
-.nav-item.active .nav-label{ max-width:130px; opacity:1; padding:0 2px 0 16px; }
+.nav-item.active .nav-ico svg{ opacity:1; }   /* активная — полный контраст */
 .coming-soon{ padding:30px 4px; }
 .back-btn{ background:transparent; border:none; color:var(--fg); font-size:30px; line-height:1; width:34px; height:34px; margin-left:-6px; display:flex; align-items:center; justify-content:center; }
 .main{ flex:1; min-height:0; position:relative; }
@@ -224,8 +225,10 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .form-actions{ display:flex; gap:8px; }
 .form-actions .btn{ flex:1; font-family:var(--font-title); font-size:15px; font-weight:500; letter-spacing:.01em; }
 
-/* FAB */
-.fab{ position:fixed; right:calc(var(--safe-right) + 20px); bottom:calc(var(--safe-bottom) + 70px); z-index:40; width:58px; height:58px; border-radius:50%; border:none; background:var(--solid-bg); color:var(--solid-fg); font-size:30px; line-height:1; display:flex; align-items:center; justify-content:center; box-shadow:0 10px 26px rgba(0,0,0,.4); transition:opacity .15s; }
+/* FAB — над нижним меню */
+.fab{ position:fixed; right:calc(var(--safe-right) + 20px); bottom:calc(var(--safe-bottom) + 96px); z-index:40; width:58px; height:58px; border-radius:50%; border:none; background:var(--solid-bg); color:var(--solid-fg); font-size:30px; line-height:1; display:flex; align-items:center; justify-content:center; box-shadow:0 10px 26px rgba(0,0,0,.4); transition:opacity .15s; }
+/* Контент списков не заезжает под нижнее меню */
+#view-tasks, #view-projects, #view-notes, #view-finance, #view-habits{ padding-bottom:calc(var(--safe-bottom) + 98px); }
 [data-theme="light"] .fab{ box-shadow:0 10px 26px rgba(0,0,0,.22); }
 .fab:active{ opacity:.7; }
 
@@ -297,8 +300,11 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
   .kanban{ padding-left:5vw; padding-right:5vw; }
   .taskcard{ width:60%; margin-inline:auto; padding-left:0; padding-right:0; }
   .form-foot{ width:60%; margin-inline:auto; padding-left:0; padding-right:0; }
-  .fab{ right:calc(var(--safe-right) + 34px); bottom:34px; }
+  #page-nav{ padding-left:5vw; padding-right:5vw; }
+  .fab{ right:calc(var(--safe-right) + 34px); }
 }
+/* Десктоп/планшеты — меню выравнивается по левому краю */
+@media (min-width:768px){ #page-nav{ justify-content:flex-start; } }
 
 /* Комп-версия: всё крупнее в 1.25× (эквивалент браузерных 125%) */
 @media (min-width:1000px){
@@ -306,16 +312,8 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
   .auth, .app{ height:calc(100vh / 1.25); height:calc(100dvh / 1.25); }
 }
 
-/* Мобильная версия: меню переносим вниз экрана (десктоп/планшеты — сверху как было) */
+/* Только мобильная: фильтры на странице задач мельче в 1.25× */
 @media (max-width:767px){
-  #page-nav{
-    position:absolute; left:0; right:0;
-    bottom:calc(var(--safe-bottom) + 20px);
-    z-index:30;
-    padding:0 10px;
-  }
-  /* в списках (меню видно) верхняя шапка-подзаголовок пустая — не оставляем зазор */
-  .subhead:has(#page-nav:not([hidden])){ min-height:0; padding-top:8px; padding-bottom:0; }
-  /* контент списков не заезжает под нижнее меню */
-  #view-tasks, #view-projects, #view-notes, #view-finance, #view-habits{ padding-bottom:calc(var(--safe-bottom) + 78px); }
+  #view-tasks .pane-head-tools .chip{ font-size:calc(var(--fs-body) * .8); padding:5px 10px; }
+  #view-tasks .pane-head-tools .chip svg{ width:10px; height:10px; }
 }
