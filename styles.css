@@ -145,7 +145,10 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .fin-income{ background:rgba(134,217,152,.24); cursor:pointer; }
 .fin-sum{ margin-left:auto; font-weight:500; }
 /* Окно операции */
+#fintx-modal .modal-card{ gap:24px; }
 .fintx-kind{ display:flex; gap:8px; }
+.fintx-cat .status-del{ margin-left:1px; margin-right:-3px; opacity:.5; font-size:15px; line-height:1; padding:0 3px; cursor:pointer; }
+.fintx-cat .status-del:hover{ opacity:1; }
 .kind-btn{ flex:1; border:none; border-radius:var(--radius); padding:10px; background:var(--inactive-bg); color:var(--inactive-fg); font-size:var(--fs-body); cursor:pointer; }
 .kind-btn.is-on{ background:var(--solid-bg); color:var(--solid-fg); }
 .fintx-cats{ display:flex; flex-wrap:wrap; gap:8px; }
@@ -155,8 +158,9 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .cal-day.in-range{ background:var(--sel-bg); border-radius:0; }
 /* Страница категории: список операций (дата + сумма) — плоско, как задачи */
 #fincat-list{ display:flex; flex-direction:column; gap:2px; }
-.fincat-txrow{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 2px; }
-.fincat-date{ font-size:var(--fs-body); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fincat-txrow{ display:flex; align-items:center; gap:12px; padding:6px 2px; }
+.fincat-date{ flex:none; font-size:var(--fs-body); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fincat-note{ flex:1; min-width:0; text-align:center; font-size:var(--fs-body); color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .fincat-amount{ flex:none; font-size:var(--fs-body); color:var(--text-soft); font-variant-numeric:tabular-nums; }
 
 /* СТАТУСЫ — пилюля (имя + светящаяся точка справа) */
@@ -178,6 +182,7 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 /* Поля */
 .field{ width:100%; background:var(--field-bg); color:var(--fg); border:none; border-radius:13px; padding:13px 15px; font-size:var(--fs-body); font-weight:300; outline:none; margin:0; }
 .field::placeholder{ color:var(--muted); }
+.field--amount{ font-family:var(--font-title); font-weight:600; font-size:24px; letter-spacing:.01em; }
 ::selection{ background:var(--sel-bg); }
 
 /* ВХОД */
@@ -358,8 +363,3 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
   .auth, .app{ height:calc(100vh / 1.25); height:calc(100dvh / 1.25); }
 }
 
-/* Только мобильная: фильтры на странице задач мельче в 1.25× */
-@media (max-width:767px){
-  #view-tasks .pane-head-tools .chip{ font-size:calc(var(--fs-body) * .8); padding:5px 10px; }
-  #view-tasks .pane-head-tools .chip svg{ width:10px; height:10px; }
-}

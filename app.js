@@ -390,8 +390,8 @@
       if (sb && this.userId) { const { data } = await sb.from("fin_tx").select("*").eq("user_id", this.userId).gte("created_at", fromISO).lte("created_at", toISO); return data || []; }
       return Local.ensure().finTx.filter((t) => t.created_at >= fromISO && t.created_at <= toISO);
     },
-    async addFinTx({ kind, amount_minor, category_id }) {
-      const base = { kind: kind || "expense", amount_minor: Math.round(amount_minor || 0), category_id: category_id || null };
+    async addFinTx({ kind, amount_minor, category_id, note }) {
+      const base = { kind: kind || "expense", amount_minor: Math.round(amount_minor || 0), category_id: category_id || null, note: (note && note.trim()) || null };
       if (sb && this.userId) { const { data } = await sb.from("fin_tx").insert({ ...base, user_id: this.userId }).select().single(); return data; }
       const d = Local.ensure(); const row = { id: uid(), created_at: new Date().toISOString(), ...base }; d.finTx.push(row); Local.write(d); return row;
     },
@@ -1158,7 +1158,18 @@
     ["#fin-range", "#fincat-range"].forEach((id) => { const el = $(id); if (el) el.classList.toggle("is-on", finPeriod.mode === "range"); });
   }
   function finSetMonth() { finPeriod = { mode: "month" }; syncFinFilters(); renderCurrentFin(); }
+  // Одноразовая чистка: убрать дефолтные «Машина»/«Транспорт» (в т.ч. с уже созданных аккаунтов)
+  async function cleanupDefaultCats() {
+    try {
+      if (localStorage.getItem("gunco_fincat_rm_v1")) return;
+      const cats = await Store.finCategories();
+      const rm = cats.filter((c) => (c.name === "Машина" && c.emoji === "🚗") || (c.name === "Транспорт" && c.emoji === "🚌"));
+      for (const c of rm) await Store.deleteFinCategory(c.id);
+      localStorage.setItem("gunco_fincat_rm_v1", "1");
+    } catch (e) {}
+  }
   async function renderFinance() {
+    await cleanupDefaultCats();
     const cats = await Store.finCategories(); finCatsCache = cats;
     const { from, to } = finRange();
     const tx = await Store.finTx(from, to);
@@ -1204,7 +1215,7 @@
     $("#fincat-empty").hidden = list.length > 0;
     $("#fincat-list").innerHTML = list.map((t) => `<div class="fincat-row swipeable" data-id="${t.id}">
       <div class="swipe-del">${TRASH_SVG}</div>
-      <div class="swipe-row fincat-txrow"><span class="fincat-date">${fmtDateLong(t.created_at)}</span><span class="fincat-amount">${fmtMoney(t.amount_minor)}</span></div>
+      <div class="swipe-row fincat-txrow"><span class="fincat-date">${fmtDateLong(t.created_at)}</span><span class="fincat-note">${esc(t.note || "")}</span><span class="fincat-amount">${fmtMoney(t.amount_minor)}</span></div>
     </div>`).join("");
     $$("#fincat-list .fincat-row").forEach((el) => attachSwipe(el, async () => { await Store.deleteFinTx(el.dataset.id); renderFinCatPage(); }));
     syncFinFilters();
@@ -1219,13 +1230,14 @@
   let finTxKind = "expense", finTxCatId = null, finTxIncomeOnly = false;
   function renderFinTxCats() {
     const add = `<button type="button" class="proj-add-row" id="fintx-add-cat" aria-label="Новая категория"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 6.5v11M6.5 12h11"/></svg></button>`;
-    $("#fintx-cats").innerHTML = add + finCatsCache.map((c) => `<button type="button" class="proj-pill fintx-cat ${c.id === finTxCatId ? "is-cur" : ""}" data-id="${c.id}"><span class="proj-emoji">${c.emoji || DEFAULT_EMOJI}</span><span class="proj-name">${esc(c.name)}</span></button>`).join("");
+    $("#fintx-cats").innerHTML = add + finCatsCache.map((c) => `<button type="button" class="proj-pill fintx-cat ${c.id === finTxCatId ? "is-cur" : ""}" data-id="${c.id}"><span class="proj-emoji">${c.emoji || DEFAULT_EMOJI}</span><span class="proj-name">${esc(c.name)}</span><span class="status-del" data-del="${c.id}" aria-label="Удалить">×</span></button>`).join("");
     $("#fintx-add-cat").addEventListener("click", () => openFinCat());
   }
   async function openFinTx(opts) {
     opts = opts || {}; finTxIncomeOnly = !!opts.incomeOnly; finTxKind = finTxIncomeOnly ? "income" : "expense"; finTxCatId = opts.preCat || null;
     finCatsCache = await Store.finCategories();
-    $("#fintx-amount").value = "";
+    $("#fintx-amount").value = ""; $("#fintx-note").value = "";
+    $("#fintx-amount").placeholder = finTxKind === "income" ? "500,00" : "10,00";
     $("#fintx-kind").hidden = finTxIncomeOnly;
     $("#fintx-kind-expense").classList.toggle("is-on", finTxKind === "expense"); $("#fintx-kind-income").classList.toggle("is-on", finTxKind === "income");
     $("#fintx-cats").hidden = finTxKind === "income"; if (finTxKind !== "income") renderFinTxCats();
@@ -1233,19 +1245,28 @@
   }
   $$("#fintx-kind .kind-btn").forEach((b) => b.addEventListener("click", () => {
     finTxKind = b.dataset.kind; $$("#fintx-kind .kind-btn").forEach((x) => x.classList.toggle("is-on", x === b));
+    $("#fintx-amount").placeholder = finTxKind === "income" ? "500,00" : "10,00";
     $("#fintx-cats").hidden = finTxKind === "income"; if (finTxKind !== "income") renderFinTxCats();
   }));
-  $("#fintx-cats").addEventListener("click", (e) => {
+  $("#fintx-cats").addEventListener("click", async (e) => {
     if (DRAG.active) return;
+    const del = e.target.closest(".status-del");
+    if (del) {
+      if (!(await askConfirm("Удалить категорию?", "Операции в ней останутся без категории"))) return;
+      await Store.deleteFinCategory(del.dataset.del);
+      if (finTxCatId === del.dataset.del) finTxCatId = null;
+      finCatsCache = await Store.finCategories(); renderFinTxCats(); renderCurrentFin();
+      return;
+    }
     const p = e.target.closest(".fintx-cat"); if (!p) return; const id = p.dataset.id;
     if (finTxCatId === id) { const c = finCatsCache.find((x) => x.id === id); if (c) openFinCat({ edit: c }); return; }  // повторный тап по выбранной → редактирование категории
     finTxCatId = id; $$("#fintx-cats .fintx-cat").forEach((x) => x.classList.toggle("is-cur", x === p));
   });
-  makeSortable($("#fintx-cats"), { itemSelector: ".fintx-cat", axis: "wrap", onDrop: async (d) => { for (let i = 0; i < d.orderedIds.length; i++) { const c = finCatsCache.find((x) => x.id === d.orderedIds[i]); if (c && c.sort !== i) { c.sort = i; await Store.updateFinCategory(c.id, { sort: i }); } } finCatsCache.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0)); renderFinance(); } });
+  makeSortable($("#fintx-cats"), { itemSelector: ".fintx-cat", axis: "wrap", ignore: ".status-del", onDrop: async (d) => { for (let i = 0; i < d.orderedIds.length; i++) { const c = finCatsCache.find((x) => x.id === d.orderedIds[i]); if (c && c.sort !== i) { c.sort = i; await Store.updateFinCategory(c.id, { sort: i }); } } finCatsCache.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0)); renderFinance(); } });
   $("#fintx-ok").addEventListener("click", async () => {
     const minor = parseMoney($("#fintx-amount").value); if (minor == null || minor <= 0) { $("#fintx-amount").focus(); return; }
     if (finTxKind === "expense" && !finTxCatId) { return; }   // для расхода нужна категория
-    await Store.addFinTx({ kind: finTxKind, amount_minor: minor, category_id: finTxKind === "income" ? null : finTxCatId });
+    await Store.addFinTx({ kind: finTxKind, amount_minor: minor, category_id: finTxKind === "income" ? null : finTxCatId, note: $("#fintx-note").value });
     $("#fintx-modal").hidden = true; renderCurrentFin();
   });
   $("#fintx-cancel").addEventListener("click", () => ($("#fintx-modal").hidden = true));
@@ -1261,7 +1282,7 @@
   $("#fincat-emoji").addEventListener("click", () => openEmojiModal(finCatEmoji, (em) => { finCatEmoji = em; renderFinCatEmoji(); }));
   function openFinCat(opts) {
     const ed = (opts && opts.edit) || null; finCatEditId = ed ? ed.id : null;
-    finCatEmoji = ed ? (ed.emoji || "") : ""; finCatColor = ed ? (ed.color || STATUS_PALETTE[0]) : STATUS_PALETTE[0];
+    finCatEmoji = ed ? (ed.emoji || "") : "💶"; finCatColor = ed ? (ed.color || STATUS_PALETTE[0]) : STATUS_PALETTE[0];
     renderFinCatEmoji(); renderFinCatSwatches(); $("#fincat-name").value = ed ? (ed.name || "") : "";
     $("#fincat-modal .modal-title").textContent = ed ? "Категория" : "Новая категория"; $("#fincat-ok").textContent = ed ? "Сохранить" : "Создать";
     $("#fincat-modal").hidden = false; setTimeout(() => $("#fincat-name").focus(), 30);
