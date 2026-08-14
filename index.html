@@ -13,10 +13,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="gunco" />
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-<link rel="icon" type="image/svg+xml" href="icons/favicon.svg" />
+<link rel="icon" type="image/svg+xml" href="icons/rose.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500;700;800&family=Unbounded:wght@500;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -25,10 +25,14 @@
 <div id="auth" class="auth" hidden>
   <div class="auth-top">
     <div class="brand brand--big"><span class="logo" aria-hidden="true"></span><span class="wordmark">gunco</span></div>
-    <p class="auth-tagline">До смерти осталось не так много, успевай делать больше</p>
     <form id="auth-form" class="auth-form" autocomplete="on">
+      <input id="auth-name" class="field" type="text" placeholder="имя и фамилия" autocomplete="name" />
       <input id="auth-email" class="field" type="email" placeholder="e-mail" required autocomplete="email" />
-      <input id="auth-pass" class="field" type="password" placeholder="пароль" required autocomplete="current-password" minlength="6" />
+      <div class="field-pass">
+        <button id="auth-pass-eye" class="pass-eye" type="button" aria-label="Показать пароль"></button>
+        <input id="auth-pass" class="field" type="password" placeholder="пароль" required autocomplete="current-password" />
+      </div>
+      <input id="auth-pass2" class="field" type="text" placeholder="повторите пароль" autocomplete="new-password" hidden />
       <button id="auth-signin" class="btn btn--solid" type="submit">Войти</button>
       <button id="auth-forgot" class="auth-forgot" type="button">Забыли пароль?</button>
     </form>
@@ -188,6 +192,7 @@
             <button id="fin-income" class="fin-row fin-income" type="button"><span class="fin-name">доходы</span><span id="fin-income-sum" class="fin-sum"></span></button>
           </div>
         </div>
+        <button id="shop-link" class="shop-link" type="button"><span class="shop-link-emoji">🛒</span><span class="fin-name">список покупок</span></button>
       </div>
     </section>
 
@@ -201,6 +206,14 @@
         </div>
         <div id="fincat-list" class="task-list scroll"></div>
         <p id="fincat-empty" class="empty" hidden>Нет операций за период</p>
+      </div>
+    </section>
+
+    <!-- СПИСОК ПОКУПОК (страница-заметка, редактируется с клавиатуры) -->
+    <section id="view-shop" class="view" hidden>
+      <div class="pane pane--shop">
+        <div class="shop-tools"><button id="shop-uncheck" class="chip" type="button">Снять все отметки</button></div>
+        <div id="shop-body" class="taskcard-desc shop-body scroll" contenteditable="true" spellcheck="false"></div>
       </div>
     </section>
 
@@ -226,6 +239,7 @@
 
   <div id="account-pop" class="account-pop" hidden>
     <div class="account-label">аккаунт</div>
+    <div id="account-name" class="account-name" hidden></div>
     <div id="account-email" class="account-email"></div>
     <button id="notif-btn" class="btn" type="button">Включить уведомления</button>
     <button id="account-signout" class="btn" type="button">Выйти</button>

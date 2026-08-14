@@ -1,4 +1,9 @@
 /* ============ gunco — стили ============ */
+/* Unbounded (вариативный, 500–600): сначала локальный файл (офлайн/надёжно), при отсутствии — резерв с Google CDN. Так широкий шрифт не «слетает» ни при каком раскладе. */
+@font-face{ font-family:"Unbounded"; font-style:normal; font-weight:400 700; font-display:swap; src:url("fonts/unbounded-cyrillic-ext.woff2") format("woff2"), url("https://fonts.gstatic.com/s/unbounded/v12/Yq6W-LOTXCb04q32xlpwtsZfvRIkSYZH.woff2") format("woff2"); unicode-range:U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F; }
+@font-face{ font-family:"Unbounded"; font-style:normal; font-weight:400 700; font-display:swap; src:url("fonts/unbounded-cyrillic.woff2") format("woff2"), url("https://fonts.gstatic.com/s/unbounded/v12/Yq6W-LOTXCb04q32xlpwv8ZfvRIkSYZH.woff2") format("woff2"); unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face{ font-family:"Unbounded"; font-style:normal; font-weight:400 700; font-display:swap; src:url("fonts/unbounded-latin-ext.woff2") format("woff2"), url("https://fonts.gstatic.com/s/unbounded/v12/Yq6W-LOTXCb04q32xlpwtcZfvRIkSYZH.woff2") format("woff2"); unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face{ font-family:"Unbounded"; font-style:normal; font-weight:400 700; font-display:swap; src:url("fonts/unbounded-latin.woff2") format("woff2"), url("https://fonts.gstatic.com/s/unbounded/v12/Yq6W-LOTXCb04q32xlpwu8ZfvRIkSQ.woff2") format("woff2"); unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 :root{
   --fs-title: 24px; --fs-sub: 14px; --fs-body: 13px;
   --font-title: "Unbounded", system-ui, sans-serif;
@@ -37,9 +42,9 @@ input,textarea,select{ font-family:var(--font-body); color:var(--fg); }
 /* Бренд */
 .brand{ display:inline-flex; align-items:center; gap:8px; }
 .brand-btn{ background:transparent; border:none; padding:0; cursor:pointer; }
-.logo{ width:30px; height:22px; display:inline-block; flex:none; background:currentColor; -webkit-mask:url("icons/gun.svg") center / contain no-repeat; mask:url("icons/gun.svg") center / contain no-repeat; }
+.logo{ width:36px; height:36px; display:inline-block; flex:none; background:currentColor; -webkit-mask:url("icons/rose.svg") center / contain no-repeat; mask:url("icons/rose.svg") center / contain no-repeat; }
 .wordmark{ font-family:var(--font-title); font-weight:600; font-size:14.4px; letter-spacing:.01em; }
-.brand--big .logo{ width:66px; height:48px; }
+.brand--big .logo{ width:81px; height:81px; }
 .brand--big .wordmark{ font-size:var(--fs-title); }
 
 /* Кнопки */
@@ -143,6 +148,11 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .fin-total, .fin-income{ display:flex; align-items:center; gap:6px; min-height:40px; padding:8px 14px; border-radius:5px; border:none; width:100%; text-align:left; font-size:var(--fs-body); color:var(--fg); }
 .fin-total{ background:var(--inactive-bg); }
 .fin-income{ background:rgba(134,217,152,.24); cursor:pointer; }
+.shop-link{ flex:none; display:flex; align-items:center; gap:8px; width:100%; margin-top:8px; padding:11px 14px; border:none; border-radius:5px; background:var(--inactive-bg); color:var(--fg); font-size:var(--fs-body); text-align:left; cursor:pointer; }
+.shop-link-emoji{ flex:none; font-size:16px; line-height:1; }
+.pane--shop{ display:flex; flex-direction:column; min-height:0; }
+.shop-tools{ flex:none; margin-bottom:12px; }
+.shop-body{ flex:1; min-height:0; overflow-y:auto; margin-top:0; padding-right:12px; }
 .fin-sum{ margin-left:auto; font-weight:500; }
 /* Окно операции */
 #fintx-modal .modal-card{ gap:24px; }
@@ -158,7 +168,10 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .cal-day.in-range{ background:var(--sel-bg); border-radius:0; }
 /* Страница категории: список операций (дата + сумма) — плоско, как задачи */
 #fincat-list{ display:flex; flex-direction:column; gap:2px; }
-.fincat-txrow{ display:flex; align-items:center; gap:12px; padding:6px 2px; }
+.fincat-txrow{ display:flex; align-items:center; gap:12px; padding:6px 2px; cursor:pointer; }
+.fincat-del{ flex:none; background:transparent; border:none; padding:0; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; color:var(--muted); cursor:pointer; }
+.fincat-del:hover{ color:#e5484d; }
+.fincat-del svg{ width:15px; height:15px; display:block; }
 .fincat-date{ flex:none; font-size:var(--fs-body); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .fincat-note{ flex:1; min-width:0; text-align:center; font-size:var(--fs-body); color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .fincat-amount{ flex:none; font-size:var(--fs-body); color:var(--text-soft); font-variant-numeric:tabular-nums; }
@@ -183,6 +196,12 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .field{ width:100%; background:var(--field-bg); color:var(--fg); border:none; border-radius:13px; padding:13px 15px; font-size:var(--fs-body); font-weight:300; outline:none; margin:0; }
 .field::placeholder{ color:var(--muted); }
 .field--amount{ font-family:var(--font-title); font-weight:600; font-size:24px; letter-spacing:.01em; }
+.field-pass{ position:relative; }
+.field-pass .field{ padding-left:46px; }
+.field-pass.no-eye .field{ padding-left:15px; }
+.pass-eye{ position:absolute; left:9px; top:50%; transform:translateY(-50%); width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; padding:0; background:transparent; border:none; color:var(--muted); cursor:pointer; }
+.pass-eye:hover{ color:var(--fg); }
+.pass-eye svg{ display:block; }
 ::selection{ background:var(--sel-bg); }
 
 /* ВХОД */
@@ -287,7 +306,8 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .account-pop{ position:fixed; top:calc(var(--safe-top) + 52px); right:16px; z-index:55; min-width:210px; max-width:min(88vw,280px); background:var(--bg); border-radius:16px; padding:14px; display:flex; flex-direction:column; gap:10px; box-shadow:0 14px 40px rgba(0,0,0,.5); }
 [data-theme="light"] .account-pop{ box-shadow:0 14px 40px rgba(0,0,0,.2); border:1px solid var(--inactive-bg); }
 .account-label{ font-size:10px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; text-align:center; }
-.account-email{ font-size:var(--fs-body); color:var(--fg); word-break:break-all; text-align:center; }
+.account-name{ font-size:var(--fs-body); font-weight:600; color:var(--fg); text-align:center; word-break:break-word; margin-bottom:-6px; }
+.account-email{ font-size:var(--fs-body); color:var(--muted); word-break:break-all; text-align:center; }
 .account-pop .btn{ width:100%; }
 
 /* Модалки */

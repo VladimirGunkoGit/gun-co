@@ -59,6 +59,9 @@
     { emoji: "🍏", name: "Диета", color: STATUS_PALETTE[5] },
   ];
 
+  /* Список покупок: дефолтное наполнение для новых пользователей (заметка с подзаголовками + чек-боксами) */
+  const DEFAULT_SHOP_HTML = '<div>🥦 Овощи</div><div class="chk" data-checked="0">Огурцы</div><div class="chk" data-checked="0">Помидоры</div><div>🥩 Мясо</div><div class="chk" data-checked="0">Курица</div><div class="chk" data-checked="0">Говядина</div><div>🥖 Бакалея</div><div class="chk" data-checked="0">Макароны</div><div class="chk" data-checked="0">Рис</div><div>🧴 Химия</div><div class="chk" data-checked="0">Губки для посуды</div><div class="chk" data-checked="0">Порошок</div>';
+
   /* Финансы: дефолтные категории + деньги в целых копейках */
   const DEFAULT_FIN_CATEGORIES = [
     { emoji: "🏠", name: "Жильё", color: STATUS_PALETTE[2] },
@@ -266,6 +269,8 @@
       d.taskStatuses = d.taskStatuses || seedStatuses();
       d.projectStatuses = d.projectStatuses || seedStatuses();
       d.settings = d.settings || { theme: "dark", count: 5 };
+      if (!d.shopV1) { d.shopList = DEFAULT_SHOP_HTML; d.shopV1 = true; }
+      d.shopList = d.shopList || "";
       this.write(d); return d;
     },
   };
@@ -398,6 +403,18 @@
     async deleteFinTx(id) {
       if (sb && this.userId) { await sb.from("fin_tx").delete().eq("id", id); return; }
       const d = Local.ensure(); d.finTx = d.finTx.filter((x) => x.id !== id); Local.write(d);
+    },
+    async updateFinTx(id, fields) {
+      if (sb && this.userId) { await sb.from("fin_tx").update(fields).eq("id", id); return; }
+      const d = Local.ensure(); const t = d.finTx.find((x) => x.id === id); if (t) Object.assign(t, fields); Local.write(d);
+    },
+    async shopList() {
+      if (sb && this.userId) { const { data } = await sb.from("shop_list").select("body").eq("user_id", this.userId).maybeSingle(); return data ? data.body : null; }
+      return Local.ensure().shopList;
+    },
+    async saveShopList(body) {
+      if (sb && this.userId) { await sb.from("shop_list").upsert({ user_id: this.userId, body, updated_at: new Date().toISOString() }); return; }
+      const d = Local.ensure(); d.shopList = body; Local.write(d);
     },
     async settings() { if (sb && this.userId) { const { data } = await sb.from("settings").select("*").eq("user_id", this.userId).single(); return data || { theme: "dark", count: 5 }; } return Local.ensure().settings; },
     async saveSettings(s) { if (sb && this.userId) { await sb.from("settings").upsert({ user_id: this.userId, ...s }); return; } const d = Local.ensure(); d.settings = { ...d.settings, ...s }; Local.write(d); },
@@ -729,10 +746,11 @@
     currentView = name;
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
     const isForm = name === "task" || name === "project" || name === "note";
-    const isSub = name === "fincat";   // под-страница: назад + свой заголовок, без нижнего меню
+    const isSub = name === "fincat" || name === "shop";   // под-страница: назад + свой заголовок, без нижнего меню
     $("#back-btn").hidden = !(isForm || isSub);
     $("#page-title").hidden = isForm;
     if (name === "fincat") $("#page-title").textContent = finCatViewTitle;
+    else if (name === "shop") $("#page-title").textContent = "🛒 список покупок";
     else if (!isForm) $("#page-title").textContent = PAGE_TITLES[name] || "";
     $("#filter-toggle").hidden = name !== "tasks";
     if (name === "tasks") $("#task-filters").hidden = !filtersOpen;
@@ -746,6 +764,7 @@
     else if (name === "habits") renderHabits();
     else if (name === "finance") renderFinance();
     else if (name === "fincat") renderFinCatPage();
+    else if (name === "shop") renderShop();
   }
   $$("#page-nav .nav-item").forEach((b) => b.addEventListener("click", () => { if (currentView !== b.dataset.view) showView(b.dataset.view); }));
   $("#filter-toggle").addEventListener("click", () => { filtersOpen = !filtersOpen; $("#task-filters").hidden = !filtersOpen; });
@@ -755,6 +774,7 @@
     if (currentView === "project") { leaveProject(); return; }
     if (currentView === "note") { leaveNote(); return; }
     if (currentView === "fincat") { showView("finance"); return; }
+    if (currentView === "shop") { saveShop(); showView("finance"); return; }
   }
   $("#back-btn").addEventListener("click", goBack);
   $("#brand-home").addEventListener("click", () => showView("tasks"));
@@ -1148,6 +1168,7 @@
   let finCatSort = false;              // сортировка операций по сумме (страница категории)
   let finCatViewId = null, finCatViewTitle = "финансы";
   let finCatsCache = [];
+  let finCatPageTx = [];                // операции, отрисованные на странице категории (для тапа→редактирование)
   function finRange() { return finPeriod.mode === "range" ? { from: finPeriod.from, to: finPeriod.to } : { from: monthStartISO(), to: new Date().toISOString() }; }
   function renderCurrentFin() { if (currentView === "fincat") renderFinCatPage(); else renderFinance(); }
   function syncFinFilters() {
@@ -1215,8 +1236,9 @@
     $("#fincat-empty").hidden = list.length > 0;
     $("#fincat-list").innerHTML = list.map((t) => `<div class="fincat-row swipeable" data-id="${t.id}">
       <div class="swipe-del">${TRASH_SVG}</div>
-      <div class="swipe-row fincat-txrow"><span class="fincat-date">${fmtDateLong(t.created_at)}</span><span class="fincat-note">${esc(t.note || "")}</span><span class="fincat-amount">${fmtMoney(t.amount_minor)}</span></div>
+      <div class="swipe-row fincat-txrow"><button class="fincat-del" data-act="del" type="button" aria-label="Удалить">${TRASH_SVG}</button><span class="fincat-date">${fmtDateLong(t.created_at)}</span><span class="fincat-note">${esc(t.note || "")}</span><span class="fincat-amount">${fmtMoney(t.amount_minor)}</span></div>
     </div>`).join("");
+    finCatPageTx = list;
     $$("#fincat-list .fincat-row").forEach((el) => attachSwipe(el, async () => { await Store.deleteFinTx(el.dataset.id); renderFinCatPage(); }));
     syncFinFilters();
     $("#fincat-sort").classList.toggle("is-on", finCatSort);
@@ -1225,22 +1247,54 @@
   $("#fincat-month").addEventListener("click", finSetMonth);
   $("#fincat-range").addEventListener("click", () => openFinRange());
   $("#fincat-sort").addEventListener("click", () => { finCatSort = !finCatSort; renderFinCatPage(); });
+  // Тап по корзинке слева → удалить трату (моб.+комп); тап по строке → редактирование (то же окно, что и создание)
+  $("#fincat-list").addEventListener("click", async (e) => {
+    if (justSwiped) return;
+    const row = e.target.closest(".fincat-row"); if (!row) return; const id = row.dataset.id;
+    if (e.target.closest(".fincat-del")) { if (!(await askConfirm("Удалить трату?"))) return; await Store.deleteFinTx(id); renderFinCatPage(); return; }
+    const tx = finCatPageTx.find((t) => t.id === id); if (tx) openFinTx({ edit: tx });
+  });
+
+  /* ---------- Список покупок (страница-заметка с автосохранением) ---------- */
+  let shopInited = false, shopSaveTimer = null;
+  async function renderShop() {
+    const body = $("#shop-body");
+    const html = await Store.shopList();
+    descLoad(body, html || DEFAULT_SHOP_HTML);
+    if (!shopInited) {
+      shopInited = true;
+      initChecklist(body); initFormatting(body);
+      body.addEventListener("input", scheduleShopSave);
+      body.addEventListener("click", (e) => { if (e.target.closest(".chk")) scheduleShopSave(); });
+    }
+  }
+  function scheduleShopSave() { clearTimeout(shopSaveTimer); shopSaveTimer = setTimeout(saveShop, 400); }
+  async function saveShop() { clearTimeout(shopSaveTimer); await Store.saveShopList(descSerialize($("#shop-body"))); }
+  $("#shop-link").addEventListener("click", () => showView("shop"));
+  $("#shop-uncheck").addEventListener("click", () => {
+    $$("#shop-body .chk").forEach((c) => { c.setAttribute("data-checked", "0"); c.classList.remove("is-done"); });
+    saveShop();
+  });
 
   /* Окно создания операции */
-  let finTxKind = "expense", finTxCatId = null, finTxIncomeOnly = false;
+  let finTxKind = "expense", finTxCatId = null, finTxIncomeOnly = false, finTxEditId = null;
   function renderFinTxCats() {
     const add = `<button type="button" class="proj-add-row" id="fintx-add-cat" aria-label="Новая категория"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 6.5v11M6.5 12h11"/></svg></button>`;
     $("#fintx-cats").innerHTML = add + finCatsCache.map((c) => `<button type="button" class="proj-pill fintx-cat ${c.id === finTxCatId ? "is-cur" : ""}" data-id="${c.id}"><span class="proj-emoji">${c.emoji || DEFAULT_EMOJI}</span><span class="proj-name">${esc(c.name)}</span><span class="status-del" data-del="${c.id}" aria-label="Удалить">×</span></button>`).join("");
     $("#fintx-add-cat").addEventListener("click", () => openFinCat());
   }
   async function openFinTx(opts) {
-    opts = opts || {}; finTxIncomeOnly = !!opts.incomeOnly; finTxKind = finTxIncomeOnly ? "income" : "expense"; finTxCatId = opts.preCat || null;
+    opts = opts || {}; const ed = opts.edit || null; finTxEditId = ed ? ed.id : null;
+    finTxIncomeOnly = ed ? (ed.kind === "income") : !!opts.incomeOnly;
+    finTxKind = ed ? ed.kind : (finTxIncomeOnly ? "income" : "expense");
+    finTxCatId = ed ? (ed.category_id || null) : (opts.preCat || null);
     finCatsCache = await Store.finCategories();
-    $("#fintx-amount").value = ""; $("#fintx-note").value = "";
+    $("#fintx-amount").value = ed ? fmtMoney(ed.amount_minor) : ""; $("#fintx-note").value = ed ? (ed.note || "") : "";
     $("#fintx-amount").placeholder = finTxKind === "income" ? "500,00" : "10,00";
     $("#fintx-kind").hidden = finTxIncomeOnly;
     $("#fintx-kind-expense").classList.toggle("is-on", finTxKind === "expense"); $("#fintx-kind-income").classList.toggle("is-on", finTxKind === "income");
     $("#fintx-cats").hidden = finTxKind === "income"; if (finTxKind !== "income") renderFinTxCats();
+    $("#fintx-ok").textContent = ed ? "Сохранить" : "Добавить";
     $("#fintx-modal").hidden = false; setTimeout(() => $("#fintx-amount").focus(), 30);
   }
   $$("#fintx-kind .kind-btn").forEach((b) => b.addEventListener("click", () => {
@@ -1266,7 +1320,9 @@
   $("#fintx-ok").addEventListener("click", async () => {
     const minor = parseMoney($("#fintx-amount").value); if (minor == null || minor <= 0) { $("#fintx-amount").focus(); return; }
     if (finTxKind === "expense" && !finTxCatId) { return; }   // для расхода нужна категория
-    await Store.addFinTx({ kind: finTxKind, amount_minor: minor, category_id: finTxKind === "income" ? null : finTxCatId, note: $("#fintx-note").value });
+    const catId = finTxKind === "income" ? null : finTxCatId; const note = ($("#fintx-note").value || "").trim() || null;
+    if (finTxEditId) { await Store.updateFinTx(finTxEditId, { kind: finTxKind, amount_minor: minor, category_id: catId, note }); }
+    else { await Store.addFinTx({ kind: finTxKind, amount_minor: minor, category_id: catId, note }); }
     $("#fintx-modal").hidden = true; renderCurrentFin();
   });
   $("#fintx-cancel").addEventListener("click", () => ($("#fintx-modal").hidden = true));
@@ -1336,7 +1392,8 @@
   $("#account-btn").addEventListener("click", async () => {
     if (!(sb && Store.userId)) { showAuth(); return; }
     const pop = $("#account-pop"); if (!pop.hidden) { pop.hidden = true; return; }
-    let email = ""; try { const { data } = await sb.auth.getUser(); email = data && data.user && data.user.email; } catch {}
+    let email = "", name = ""; try { const { data } = await sb.auth.getUser(); email = data && data.user && data.user.email; name = data && data.user && data.user.user_metadata && (data.user.user_metadata.full_name || data.user.user_metadata.name) || ""; } catch {}
+    const nameEl = $("#account-name"); nameEl.textContent = name; nameEl.hidden = !name;
     $("#account-email").textContent = email || "аккаунт"; updateNotifBtn(); pop.hidden = false;
   });
   $("#account-signout").addEventListener("click", async () => { $("#account-pop").hidden = true; if (sb) await sb.auth.signOut(); Store.userId = null; hasStarted = false; projectsCache = []; _projLoading = null; taskStatusesCache = seedStatuses(); projStatusesCache = seedStatuses(); _statusLoading = null; showAuth(); });
@@ -1382,11 +1439,54 @@
     const tid = new URLSearchParams(location.search).get("task");
     if (tid) { history.replaceState(null, "", location.pathname); openTaskById(tid); }
   }
-  function showAuth() { $("#app").hidden = true; $("#auth").hidden = false; $("#account-pop").hidden = true; $("#auth-forgot").hidden = !HAS_SUPABASE; $("#auth-mode-hint").textContent = HAS_SUPABASE ? "Данные синхронизируются между устройствами." : "Локальный режим: данные хранятся в этом браузере."; $("#auth-google").disabled = !HAS_SUPABASE; }
+  /* Режимы формы: вход (пароль точками + глаз) / регистрация (пароль текстом + повтор) */
+  const EYE_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7c1.7 0 3.2.4 4.5 1.1M22 12s-3.5 7-10 7c-1.7 0-3.2-.4-4.5-1.1"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/><path d="M3 3l18 18"/></svg>';
+  let authMode = "login", passShown = false;
+  function updatePassEye() {
+    $("#auth-pass-eye").innerHTML = passShown ? EYE_OFF_SVG : EYE_SVG;
+    if (authMode === "login") $("#auth-pass").type = passShown ? "text" : "password";
+  }
+  function setAuthMode(mode) {
+    authMode = mode; passShown = false;
+    const reg = mode === "register";
+    $("#auth-name").hidden = !reg;
+    $("#auth-pass2").hidden = !reg;
+    $("#auth-pass").type = reg ? "text" : "password";   // регистрация — пароль сразу виден
+    $("#auth-pass2").type = "text";
+    $("#auth-pass-eye").hidden = reg;                    // глаз только при входе
+    $(".field-pass").classList.toggle("no-eye", reg);
+    $("#auth-signin").textContent = reg ? "Зарегистрироваться" : "Войти";
+    $("#auth-signup").textContent = reg ? "Уже есть аккаунт? Войти" : "Создать аккаунт";
+    $("#auth-forgot").hidden = reg || !HAS_SUPABASE;
+    updatePassEye(); authMsg("");
+  }
+  $("#auth-pass-eye").addEventListener("click", () => { passShown = !passShown; updatePassEye(); });
+  $("#auth-signup").addEventListener("click", () => setAuthMode(authMode === "login" ? "register" : "login"));
+
+  async function doLogin() {
+    if (!sb) { startApp(); return; }
+    authMsg("…");
+    const { data, error } = await sb.auth.signInWithPassword({ email: $("#auth-email").value.trim(), password: $("#auth-pass").value });
+    if (error) return authMsg(trAuthError(error.message), "error");
+    Store.userId = data.user.id; startApp();
+  }
+  async function doRegister() {
+    const name = $("#auth-name").value.trim();
+    if (!name) return authMsg("Введите имя и фамилию", "error");
+    const p1 = $("#auth-pass").value, p2 = $("#auth-pass2").value;
+    if (p1 !== p2) return authMsg("Пароли не совпадают", "error");
+    if (!sb) { startApp(); return; }
+    authMsg("…");
+    const { data, error } = await sb.auth.signUp({ email: $("#auth-email").value.trim(), password: p1, options: { data: { full_name: name } } });
+    if (error) return authMsg(trAuthError(error.message), "error");
+    if (data.session) { Store.userId = data.user.id; startApp(); } else authMsg("Проверьте почту для подтверждения регистрации.");
+  }
+  $("#auth-form").addEventListener("submit", (e) => { e.preventDefault(); authMode === "register" ? doRegister() : doLogin(); });
+
+  function showAuth() { $("#app").hidden = true; $("#auth").hidden = false; $("#account-pop").hidden = true; setAuthMode("login"); $("#auth-mode-hint").textContent = HAS_SUPABASE ? "Данные синхронизируются между устройствами." : "Локальный режим: данные хранятся в этом браузере."; $("#auth-google").disabled = !HAS_SUPABASE; }
 
   if (HAS_SUPABASE) {
-    $("#auth-form").addEventListener("submit", async (e) => { e.preventDefault(); authMsg("…"); const { data, error } = await sb.auth.signInWithPassword({ email: $("#auth-email").value.trim(), password: $("#auth-pass").value }); if (error) return authMsg(trAuthError(error.message), "error"); Store.userId = data.user.id; startApp(); });
-    $("#auth-signup").addEventListener("click", async () => { authMsg("…"); const email = $("#auth-email").value.trim(); const password = $("#auth-pass").value; if (password.length < 6) return authMsg("Пароль слишком короткий (минимум 6 символов)", "error"); const { data, error } = await sb.auth.signUp({ email, password }); if (error) return authMsg(trAuthError(error.message), "error"); if (data.session) { Store.userId = data.user.id; startApp(); } else authMsg("Проверьте почту для подтверждения регистрации."); });
     $("#auth-google").addEventListener("click", async () => { await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + window.location.pathname } }); });
     $("#auth-forgot").addEventListener("click", async () => { const email = $("#auth-email").value.trim(); if (!email) return authMsg("Введите e-mail для сброса", "error"); const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname }); if (error) return authMsg(trAuthError(error.message), "error"); authMsg("Письмо для сброса пароля отправлено на почту", "info"); });
     $("#pw-ok").addEventListener("click", async () => { const p = $("#pw-input").value; const msg = $("#pw-msg"); msg.classList.add("is-error"); if (p.length < 6) { msg.textContent = "Минимум 6 символов"; return; } const { error } = await sb.auth.updateUser({ password: p }); if (error) { msg.textContent = trAuthError(error.message); return; } $("#pw-modal").hidden = true; $("#pw-input").value = ""; msg.textContent = ""; toast("Пароль обновлён"); });
@@ -1394,8 +1494,6 @@
     sb.auth.onAuthStateChange((event, session) => { if (event === "PASSWORD_RECOVERY") { if (session) { Store.userId = session.user.id; if ($("#app").hidden) startApp(); } $("#pw-modal").hidden = false; setTimeout(() => $("#pw-input").focus(), 60); return; } if (session && $("#app").hidden) { Store.userId = session.user.id; startApp(); } });
     sb.auth.getSession().then(({ data }) => { if (data.session) { if ($("#app").hidden) { Store.userId = data.session.user.id; startApp(); } } else if (!location.hash.includes("access_token")) showAuth(); });
   } else {
-    $("#auth-form").addEventListener("submit", (e) => { e.preventDefault(); startApp(); });
-    $("#auth-signup").addEventListener("click", startApp);
     startApp();
   }
 
