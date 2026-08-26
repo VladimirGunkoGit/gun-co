@@ -66,6 +66,11 @@
   <div class="subhead">
     <button id="back-btn" class="back-btn" type="button" aria-label="Назад" hidden>‹</button>
     <div id="page-title" class="page-title"></div>
+    <div id="task-views" class="task-views" hidden>
+      <button class="view-btn" data-tview="list" type="button" aria-label="Список"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01M9 6h11M9 12h11M9 18h11"/></svg></button>
+      <button class="view-btn" data-tview="week" type="button" aria-label="Неделя"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v16M12 4v16M18 4v16"/></svg></button>
+      <button class="view-btn" data-tview="month" type="button" aria-label="Месяц"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2.2"/><path d="M3.5 9.5h17M9 5v15M14.5 5v15M3.5 14.5h17"/></svg></button>
+    </div>
     <button id="filter-toggle" class="filter-toggle" type="button" aria-label="Фильтры" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16l-6 7v6l-4-2v-4z"/></svg></button>
   </div>
 
@@ -82,9 +87,25 @@
           <button id="date-clear" class="chip" type="button" hidden>✕</button>
           <button id="project-filter" class="chip" type="button">проекты</button>
           <button id="status-filter" class="chip" type="button">статусы</button>
+          <button id="filters-clear" class="chip chip--ico" type="button" aria-label="Сбросить фильтры"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></svg></button>
         </div>
         <div id="task-list" class="task-list scroll"></div>
         <p id="tasks-empty" class="empty" hidden>Пока нет задач</p>
+        <!-- ВИД: МЕСЯЦ -->
+        <div id="task-month" class="task-month" hidden>
+          <div class="cal-head"><div class="cal-nav-row"><button id="tm-prev" class="cal-nav" type="button" aria-label="Назад">‹</button><div id="tm-title" class="cal-title"></div><button id="tm-next" class="cal-nav" type="button" aria-label="Вперёд">›</button></div><button id="tm-today" class="cal-today" type="button">сегодня</button></div>
+          <div id="tm-grid" class="tm-grid"></div>
+        </div>
+        <!-- ВИД: НЕДЕЛЯ (расписание, бесконечный горизонтальный скролл) -->
+        <div id="task-week" class="task-week" hidden>
+          <div id="tw-scroll" class="week-scroll scroll">
+            <div class="week-canvas">
+              <div id="tw-days" class="week-days"></div>
+              <div id="tw-grid" class="week-grid"></div>
+            </div>
+          </div>
+          <button id="tw-today" class="week-today-btn" type="button">сегодня</button>
+        </div>
       </div>
     </section>
 
@@ -98,9 +119,15 @@
         </div>
         <div class="taskcard-meta taskcard-meta--datetime">
           <button id="t-date" class="meta-pill" type="button"></button>
-          <input id="t-time" class="meta-pill meta-time" type="time" step="60" aria-label="время" />
-          <button id="t-time-clear" class="meta-trash" type="button" aria-label="Очистить время"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></svg></button>
-          <button id="t-notify" class="meta-pill meta-bell" type="button" aria-label="уведомление"></button>
+          <div class="meta-timebox">
+            <input id="t-time" class="meta-time" type="time" step="60" aria-label="время начала" />
+            <button id="t-time-clear" class="meta-time-clear" type="button" aria-label="Очистить время начала"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></svg></button>
+          </div>
+          <div class="meta-timebox">
+            <input id="t-end-time" class="meta-time" type="time" step="60" aria-label="время окончания" />
+            <button id="t-end-clear" class="meta-time-clear" type="button" aria-label="Очистить время окончания"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></svg></button>
+          </div>
+          <button id="t-notify" class="meta-pill meta-bell" type="button" aria-label="напомнить за час до начала"></button>
         </div>
         <div id="t-desc" class="taskcard-desc" contenteditable="true" data-placeholder="описание"></div>
       </div>
@@ -212,8 +239,12 @@
     <!-- СПИСОК ПОКУПОК (страница-заметка, редактируется с клавиатуры) -->
     <section id="view-shop" class="view" hidden>
       <div class="pane pane--shop">
-        <div class="shop-tools"><button id="shop-uncheck" class="chip" type="button">Снять все отметки</button></div>
+        <div class="shop-tools">
+          <button id="shop-uncheck" class="chip" type="button">Снять все отметки</button>
+          <button id="shop-reset" class="chip" type="button">Очистить список</button>
+        </div>
         <div id="shop-body" class="taskcard-desc shop-body scroll" contenteditable="true" spellcheck="false"></div>
+        <div class="shop-foot"><button id="shop-done" class="btn btn--solid" type="button">Готово</button></div>
       </div>
     </section>
 
@@ -345,7 +376,6 @@
       <svg class="search-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
     </div>
     <div id="project-list" class="proj-list scroll"></div>
-    <button id="project-reset" class="fmenu-reset" type="button" hidden>сбросить</button>
     <button id="project-clear" class="modal-clear" type="button" hidden>убрать проект</button>
   </div>
 </div>

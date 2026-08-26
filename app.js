@@ -59,8 +59,12 @@
     { emoji: "🍏", name: "Диета", color: STATUS_PALETTE[5] },
   ];
 
-  /* Список покупок: дефолтное наполнение для новых пользователей (заметка с подзаголовками + чек-боксами) */
-  const DEFAULT_SHOP_HTML = '<div>🥦 Овощи</div><div class="chk" data-checked="0">Огурцы</div><div class="chk" data-checked="0">Помидоры</div><div>🥩 Мясо</div><div class="chk" data-checked="0">Курица</div><div class="chk" data-checked="0">Говядина</div><div>🥖 Бакалея</div><div class="chk" data-checked="0">Макароны</div><div class="chk" data-checked="0">Рис</div><div>🧴 Химия</div><div class="chk" data-checked="0">Губки для посуды</div><div class="chk" data-checked="0">Порошок</div>';
+  /* Список покупок: дефолтное наполнение (для новых пользователей и по кнопке «Очистить список») —
+     подзаголовок эмодзи+название, под ним пустая позиция-чекбокс, между разделами пустая строка */
+  const DEFAULT_SHOP_HTML = [
+    ["🥦", "Овощи и фрукты"], ["🥩", "Мясо и рыба"], ["🥛", "Молоко"], ["🥖", "Бакалея"],
+    ["🧃", "Вода и сок"], ["🧴", "Хозтовары"], ["📦", "Другое"],
+  ].map(([e, n]) => `<div>${e} ${n}</div><div class="chk" data-checked="0"></div>`).join('<div><br></div>');
 
   /* Финансы: дефолтные категории + деньги в целых копейках */
   const DEFAULT_FIN_CATEGORIES = [
@@ -248,6 +252,57 @@
 
   function toast(msg) { const el = $("#toast"); el.textContent = msg; el.hidden = false; clearTimeout(el._t); el._t = setTimeout(() => (el.hidden = true), 1400); }
 
+  /* ---------- Универсальная отмена (Cmd/Ctrl+Z + встряхивание, без лимита) ---------- */
+  const UndoStack = [];
+  let undoing = false;
+  function pushUndo(label, undo) { UndoStack.push({ label, undo }); }
+  function rerenderCurrent() {
+    const v = currentView;
+    if (v === "tasks") renderTasks();
+    else if (v === "projects") renderKanban();
+    else if (v === "project") renderProjectTasks();
+    else if (v === "notes") renderNotes();
+    else if (v === "habits") renderHabits();
+    else if (v === "finance") renderFinance();
+    else if (v === "fincat") renderFinCatPage();
+    else if (v === "shop") renderShop();
+  }
+  async function undoLast() {
+    if (undoing) return;
+    const item = UndoStack.pop();
+    if (!item) { toast("Нечего отменять"); return; }
+    undoing = true;
+    try { await item.undo(); } catch (e) {}
+    undoing = false;
+    rerenderCurrent();
+    toast("Отменено" + (item.label ? ": " + item.label : ""));
+  }
+  document.addEventListener("keydown", (e) => {
+    const isZ = e.code === "KeyZ" || e.key === "z" || e.key === "Z" || e.key === "я" || e.key === "Я";
+    if ((e.metaKey || e.ctrlKey) && isZ && !e.shiftKey && !e.altKey) {
+      const ae = document.activeElement;
+      if (ae && (ae.isContentEditable || ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) return; // в полях — нативная отмена ввода
+      e.preventDefault(); undoLast();
+    }
+  });
+  // Встряхивание = отмена (iOS требует разрешения по жесту)
+  let shakeArmed = false, lastShake = 0;
+  function onMotion(e) {
+    const a = e.acceleration && (e.acceleration.x != null) ? e.acceleration : e.accelerationIncludingGravity;
+    if (!a) return;
+    const mag = Math.abs(a.x || 0) + Math.abs(a.y || 0) + Math.abs(a.z || 0);
+    const thr = (e.acceleration && e.acceleration.x != null) ? 22 : 34;
+    const now = Date.now();
+    if (mag > thr && now - lastShake > 1200) { lastShake = now; undoLast(); }
+  }
+  function armShake() {
+    if (shakeArmed || typeof DeviceMotionEvent === "undefined") return;
+    if (typeof DeviceMotionEvent.requestPermission === "function") {
+      DeviceMotionEvent.requestPermission().then((s) => { if (s === "granted") { window.addEventListener("devicemotion", onMotion); shakeArmed = true; } }).catch(() => {});
+    } else { window.addEventListener("devicemotion", onMotion); shakeArmed = true; }
+  }
+  document.addEventListener("click", function armOnce() { armShake(); document.removeEventListener("click", armOnce); }, { once: true });
+
   /* ---------- Хранилище ---------- */
   const LKEY = "gunco_data_v1";
   const Local = {
@@ -408,6 +463,17 @@
       if (sb && this.userId) { await sb.from("fin_tx").update(fields).eq("id", id); return; }
       const d = Local.ensure(); const t = d.finTx.find((x) => x.id === id); if (t) Object.assign(t, fields); Local.write(d);
     },
+    // Восстановление удалённой записи с ТЕМ ЖЕ id (для отмены удаления)
+    async _restore(table, localKey, obj) {
+      if (sb && this.userId) { const { user_id, ...rest } = obj || {}; await sb.from(table).insert({ ...rest, user_id: this.userId }); return; }
+      const d = Local.ensure(); (d[localKey] = d[localKey] || []).push(obj); Local.write(d);
+    },
+    restoreTask(o) { return this._restore("tasks", "tasks", o); },
+    restoreProject(o) { return this._restore("projects", "projects", o); },
+    restoreNote(o) { return this._restore("notes", "notes", o); },
+    restoreHabit(o) { return this._restore("habits", "habits", o); },
+    restoreFinCategory(o) { return this._restore("fin_categories", "finCategories", o); },
+    restoreFinTx(o) { return this._restore("fin_tx", "finTx", o); },
     async shopList() {
       if (sb && this.userId) { const { data } = await sb.from("shop_list").select("body").eq("user_id", this.userId).maybeSingle(); return data ? data.body : null; }
       return Local.ensure().shopList;
@@ -541,13 +607,13 @@
   let projMode = "single", projCurrent = null, projOnPick = null;
   async function openProjectPicker(currentId, onPick) {
     await loadProjects(); projMode = "single"; projCurrent = currentId; projOnPick = onPick;
-    $("#project-modal-title").textContent = "проект"; $("#project-reset").hidden = true; $("#project-clear").hidden = !currentId;
+    $("#project-modal-title").textContent = "проект"; $("#project-clear").hidden = !currentId;
     $("#project-search").value = ""; $("#project-modal .search-wrap").classList.remove("has-text");
     renderProjectList(); $("#project-modal").hidden = false;
   }
   async function openProjectFilter() {
     await loadProjects(); projMode = "filter";
-    $("#project-modal-title").textContent = "проекты"; $("#project-reset").hidden = false; $("#project-clear").hidden = true;
+    $("#project-modal-title").textContent = "проекты"; $("#project-clear").hidden = true;
     $("#project-search").value = ""; $("#project-modal .search-wrap").classList.remove("has-text");
     renderProjectList(); $("#project-modal").hidden = false;
   }
@@ -568,7 +634,6 @@
     }));
   }
   $("#project-search").addEventListener("input", (e) => { e.target.closest(".search-wrap").classList.toggle("has-text", !!e.target.value); renderProjectList(); });
-  $("#project-reset").addEventListener("click", () => { filterProjects.clear(); applyFiltersUI(); saveFilters(); renderProjectList(); renderTasks(); });
   $("#project-modal").addEventListener("click", (e) => { if (e.target.id === "project-modal") $("#project-modal").hidden = true; });
 
   /* Эмодзи-пикер */
@@ -752,7 +817,9 @@
     if (name === "fincat") $("#page-title").textContent = finCatViewTitle;
     else if (name === "shop") $("#page-title").textContent = "🛒 список покупок";
     else if (!isForm) $("#page-title").textContent = PAGE_TITLES[name] || "";
+    $("#page-title").classList.toggle("wrap", name === "shop");
     $("#filter-toggle").hidden = name !== "tasks";
+    $("#task-views").hidden = name !== "tasks";
     if (name === "tasks") $("#task-filters").hidden = !filtersOpen;
     $("#page-nav").hidden = isForm || isSub;
     $("#fab").hidden = !(name === "tasks" || name === "projects" || name === "notes" || name === "habits" || name === "finance" || name === "fincat");
@@ -798,13 +865,15 @@
     $("#project-filter").classList.toggle("is-on", filterProjects.size > 0);
     $("#status-filter").classList.toggle("is-on", !isDefaultStatuses());
   }
+  // Корзинка в панели фильтров — сброс всех фильтров задач
+  $("#filters-clear").addEventListener("click", () => { dateFilter = ""; filterProjects.clear(); filterStatuses = new Set(defaultFilterIds("task")); applyFiltersUI(); saveFilters(); renderTasks(); });
 
   /* ---------- Список задач ---------- */
   function dayHead(day) { if (!day) return "без даты"; const [y, m, d] = day.split("-").map(Number); return `${WEEKDAYS[new Date(y, m - 1, d).getDay()]} · ${d} ${MONTHS_SHORT[m - 1]}`; }
   function taskRow(t, opts) {
     opts = opts || {};
     const st = statusOf(t); const p = projById(t.project_id);
-    const projCell = opts.showProjectPill ? `<span class="proj-pill task-proj ${p ? "" : "is-empty"}" data-act="project"><span class="proj-emoji">${p ? projEmoji(p) : DEFAULT_EMOJI}</span></span>` : "";
+    const projCell = opts.showProjectPill ? `<span class="proj-pill task-proj ${p ? "" : "is-empty"}" data-act="project"><span class="proj-emoji">${p ? projEmoji(p) : DEFAULT_EMOJI}</span>${p ? `<span class="proj-name">${esc(p.name)}</span>` : ""}</span>` : "";
     const dateCell = opts.showDate ? `<button class="task-date" data-act="time">${t.due_date ? dayHead(t.due_date.slice(0, 10)) : "—"}</button>` : "";
     return `<div class="task swipeable" data-id="${t.id}">
       <div class="swipe-del">${TRASH_SVG}</div>
@@ -824,17 +893,177 @@
     return html;
   }
   function buildFlatTaskListHTML(tasks, opts) { return `<div class="day-tasks">${tasks.map((t) => taskRow(t, opts)).join("")}</div>`; }
+  /* ---- Виды отображения задач: список / неделя / месяц ---- */
+  let taskView = localStorage.getItem("gunco_taskview") || "list";   // list | week | month
+  let tmY = null, tmM = null;                 // месяц-вид
+  let twBase = null, weekScrolled = false;    // неделя-вид: бесконечный горизонтальный скролл дней
+  const TW_PAST = 21, TW_FUTURE = 140;        // сколько дней назад/вперёд от сегодня рендерим
+  let twRange = TW_PAST + TW_FUTURE;          // всего дней; расширяется при скролле к краю
+  let twScrollTo = null;                      // ISO-день, к которому проскроллить при следующей отрисовке (тап по дате в месяце)
+  function isoDate(dt) { return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`; }
+  function parseISO(s) { const [y, m, d] = s.slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); }
+  function addDays(dt, n) { const d = new Date(dt); d.setDate(d.getDate() + n); return d; }
+  function mondayOf(dt) { const d = new Date(dt); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; }
+  function tasksByDay(tasks) { const m = {}; tasks.forEach((t) => { const d = (t.due_date || "").slice(0, 10); if (d) (m[d] = m[d] || []).push(t); }); return m; }
+  function taskStartMin(t) { const p = (t.due_time || "").split(":"); return p.length === 2 ? (+p[0]) * 60 + (+p[1]) : null; }
+  function taskEndMin(t) { const s = taskStartMin(t); if (s == null) return null; if (t.end_time) { const p = t.end_time.split(":"); const e = (+p[0]) * 60 + (+p[1]); if (e > s) return e; } return s + 15; }   // дата окончания = дата начала; высота = интервал или +15 мин
+  function fmtHM(min) { return `${pad(Math.floor(min / 60))}:${pad(min % 60)}`; }
+  function setTaskView(v) { taskView = v; try { localStorage.setItem("gunco_taskview", v); } catch (e) {} if (v === "week") weekScrolled = false; renderTasks(); }
+  $$("#task-views .view-btn").forEach((b) => b.addEventListener("click", () => setTaskView(b.dataset.tview)));
+  $("#tm-prev").addEventListener("click", () => { tmM--; if (tmM < 0) { tmM = 11; tmY--; } renderTasks(); });
+  $("#tm-next").addEventListener("click", () => { tmM++; if (tmM > 11) { tmM = 0; tmY++; } renderTasks(); });
+  function openWeekAt(ds) { twBase = addDays(parseISO(ds), -TW_PAST); twScrollTo = ds; weekScrolled = false; setTaskView("week"); }
+
   async function renderTasks() {
     let tasks = await Store.tasks();
     tasks = tasks.filter((t) => filterStatuses.has(statusOf(t)));
-    if (dateFilter) tasks = tasks.filter((t) => (t.due_date || "").slice(0, 10) === dateFilter);
     if (filterProjects.size) tasks = tasks.filter((t) => filterProjects.has(t.project_id));
+    if (taskView === "list" && dateFilter) tasks = tasks.filter((t) => (t.due_date || "").slice(0, 10) === dateFilter);
     tasks.sort(taskSort);
-    const shown = tasks;
-    tasksById = {}; shown.forEach((t) => (tasksById[t.id] = t));
-    $("#tasks-empty").hidden = shown.length > 0;
-    $("#task-list").innerHTML = buildGroupedTaskListHTML(shown, { showProjectPill: true });
-    $$("#task-list .task").forEach((el) => attachSwipe(el, async () => { await Store.deleteTask(el.dataset.id); renderTasks(); }));
+    tasksById = {}; tasks.forEach((t) => (tasksById[t.id] = t));
+    const isList = taskView === "list", isMonth = taskView === "month", isWeek = taskView === "week";
+    $("#task-list").hidden = !isList; $("#task-month").hidden = !isMonth; $("#task-week").hidden = !isWeek;
+    $("#tasks-empty").hidden = !(isList && !tasks.length);
+    ["list", "week", "month"].forEach((k) => { const b = $(`#task-views .view-btn[data-tview="${k}"]`); if (b) b.classList.toggle("is-on", k === taskView); });
+    if (isList) {
+      $("#task-list").innerHTML = buildGroupedTaskListHTML(tasks, { showProjectPill: true });
+      $$("#task-list .task").forEach((el) => attachSwipe(el, async () => { const o = tasksById[el.dataset.id]; await Store.deleteTask(el.dataset.id); if (o) pushUndo("удаление задачи", () => Store.restoreTask(o)); renderTasks(); }));
+    } else if (isMonth) { renderMonthView(tasks); }
+    else { renderWeekView(tasks); }
+  }
+
+  function isWeekend(dt) { const d = dt.getDay(); return d === 0 || d === 6; }
+  function nowMinutes() { const n = new Date(); return n.getHours() * 60 + n.getMinutes(); }
+  // раскладка событий дня: пересекающиеся ставим рядом (под-колонки)
+  function layoutDay(list) {
+    const evs = list.map((t) => ({ t, s: taskStartMin(t), e: taskEndMin(t), col: 0, cols: 1 })).sort((x, y) => x.s - y.s || x.e - y.e);
+    let i = 0;
+    while (i < evs.length) {
+      let clusterEnd = evs[i].e; const cluster = [evs[i]]; let j = i + 1;
+      while (j < evs.length && evs[j].s < clusterEnd) { cluster.push(evs[j]); clusterEnd = Math.max(clusterEnd, evs[j].e); j++; }
+      const colEnd = [];
+      cluster.forEach((ev) => { let c = -1; for (let k = 0; k < colEnd.length; k++) { if (colEnd[k] <= ev.s) { c = k; break; } } if (c === -1) { c = colEnd.length; colEnd.push(ev.e); } else colEnd[c] = ev.e; ev.col = c; });
+      cluster.forEach((ev) => (ev.cols = colEnd.length)); i = j;
+    }
+    return evs;
+  }
+  $("#tw-today").addEventListener("click", () => { twBase = addDays(new Date(), -TW_PAST); twRange = TW_PAST + TW_FUTURE; weekScrolled = false; renderTasks(); });
+  $("#tm-today").addEventListener("click", () => { const n = new Date(); tmY = n.getFullYear(); tmM = n.getMonth(); renderTasks(); });
+  // Бесконечный горизонтальный скролл: у краёв дорисовываем дни
+  let twExtendBusy = false, weekTasksCache = [];
+  $("#tw-scroll").addEventListener("scroll", () => {
+    if (taskView !== "week" || twExtendBusy || !twCtx) return;
+    const el = $("#tw-scroll"), colW = twCtx.colW;
+    if (el.scrollLeft + el.clientWidth > el.scrollWidth - colW * 3) { twExtendBusy = true; twRange += 56; weekScrolled = true; renderWeekView(weekTasksCache); twExtendBusy = false; }
+    else if (el.scrollLeft < colW * 3) { twExtendBusy = true; const sl = el.scrollLeft; twBase = addDays(twBase, -56); twRange += 56; weekScrolled = true; renderWeekView(weekTasksCache); el.scrollLeft = sl + 56 * colW; twExtendBusy = false; }
+  });
+  function updateNowLine() { if (taskView !== "week") return; const el = $("#tw-grid .week-now"); const grid = $("#tw-grid"); if (!el || !grid) return; const hh = parseFloat(getComputedStyle(grid).getPropertyValue("--hh")) || 60; el.style.top = (nowMinutes() / 60 * hh) + "px"; }
+  setInterval(updateNowLine, 60000);
+
+  function renderMonthView(tasks) {
+    if (tmY == null) { const n = new Date(); tmY = n.getFullYear(); tmM = n.getMonth(); }
+    $("#tm-title").textContent = `${MONTHS[tmM]} ${tmY}`;
+    const byDay = tasksByDay(tasks); const today = todayStr();
+    const offset = (new Date(tmY, tmM, 1).getDay() + 6) % 7; const days = new Date(tmY, tmM + 1, 0).getDate();
+    let html = `<div class="tm-wds">${["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"].map((w, i) => `<span class="tm-wd${i >= 5 ? " weekend" : ""}">${w}</span>`).join("")}</div><div class="tm-days">`;
+    for (let i = 0; i < offset; i++) html += `<span class="tm-day empty"></span>`;
+    for (let d = 1; d <= days; d++) {
+      const ds = `${tmY}-${pad(tmM + 1)}-${pad(d)}`; const wd = new Date(tmY, tmM, d).getDay(); const wknd = wd === 0 || wd === 6; const list = byDay[ds] || [];
+      const seen = []; list.forEach((t) => { const s = statusOf(t); if (!seen.includes(s)) seen.push(s); });
+      const dots = seen.slice(0, 4).map((s) => `<span class="tm-dot" style="background:rgb(${statusColor("task", s)})"></span>`).join("");
+      const cnt = list.length ? `<span class="tm-cnt">${list.length}</span>` : "";
+      html += `<button type="button" class="tm-day${ds === today ? " today" : ""}${wknd ? " weekend" : ""}" data-d="${ds}"><span class="tm-num">${d}</span><span class="tm-marks">${dots}${cnt}</span></button>`;
+    }
+    html += `</div>`; $("#tm-grid").innerHTML = html;
+    $$("#tm-grid .tm-day[data-d]").forEach((b) => b.addEventListener("click", () => openWeekAt(b.dataset.d)));
+  }
+
+  let twCtx = null;   // { colW, hh, days:[ISO] } — контекст текущей отрисовки недели для drag
+  function renderWeekView(tasks) {
+    weekTasksCache = tasks;
+    if (!twBase) twBase = addDays(new Date(), -TW_PAST);
+    const days = Array.from({ length: twRange }, (_, i) => addDays(twBase, i)); const today = todayStr();
+    const scrollEl = $("#tw-scroll"); const gutter = 46;
+    const contW = scrollEl.clientWidth || window.innerWidth;
+    const mobile = window.innerWidth < 768; const avail = contW - gutter;
+    const colW = mobile ? Math.round(avail / 1.3) : Math.max(240, Math.floor(avail / 7));
+    const schedH = scrollEl.clientHeight || 480; const hh = Math.round(Math.max(40, schedH / 11) * 1.5);   // шаг часа ×1.5
+    const colsW = colW * days.length; const canvasW = gutter + colsW;
+    $(".week-canvas").style.width = canvasW + "px";
+    twCtx = { colW, hh, days: days.map(isoDate) };
+    $("#tw-days").innerHTML = `<span class="week-gutter-h" style="width:${gutter}px"></span>` + days.map((d) => {
+      const ds = isoDate(d);
+      return `<span class="week-dcol${ds === today ? " today" : ""}${isWeekend(d) ? " weekend" : ""}" style="width:${colW}px"><span class="week-dcol-pill"><span class="week-wd">${WEEKDAYS[d.getDay()]}</span><span class="week-dnum">${d.getDate()}</span></span></span>`;
+    }).join("");
+    const gutterHTML = `<div class="week-gutter" style="width:${gutter}px;height:${24 * hh}px">` + Array.from({ length: 24 }, (_, h) => `<span class="week-hour" style="top:${h * hh}px">${pad(h)}:00</span>`).join("") + `</div>`;
+    const colsBg = days.map((d) => `<div class="week-col${isoDate(d) === today ? " today" : ""}${isWeekend(d) ? " weekend" : ""}" style="width:${colW}px"></div>`).join("");
+    const byDay = tasksByDay(tasks); let cardsHTML = "";
+    days.forEach((d, di) => {
+      const ds = isoDate(d);
+      const list = (byDay[ds] || []).filter((t) => taskStartMin(t) != null);
+      layoutDay(list).forEach((ev) => {
+        const { t, s, e, col, cols } = ev; const dur = e - s; const top = s / 60 * hh; const height = Math.max(20, dur / 60 * hh);
+        const w = colW / cols, left = di * colW + col * w; const p = projById(t.project_id);
+        const mini = dur < 30 ? " week-ev--mini" : "";   // <30 мин — только заголовок
+        const meta = `<span class="week-ev-side">${p ? `<span class="week-ev-proj proj-pill">${projPillInner(p)}</span>` : ""}<span class="week-ev-time">${fmtHM(s)}</span>${t.notify ? `<span class="week-ev-bell">${BELL_ON}</span>` : ""}</span>`;
+        cardsHTML += `<div class="week-ev${mini}" data-id="${t.id}" style="top:${top}px;left:${left}px;width:${w}px;height:${height}px;--c:${statusColor("task", statusOf(t))}"><div class="week-ev-body"><span class="week-ev-title">${esc(t.title)}</span>${meta}</div><span class="week-ev-resize" aria-hidden="true"></span></div>`;
+      });
+    });
+    const nowIdx = days.findIndex((d) => isoDate(d) === today);
+    const nowHTML = nowIdx >= 0 ? `<div class="week-now" style="top:${nowMinutes() / 60 * hh}px;left:${nowIdx * colW}px;width:${colW}px"></div>` : "";
+    const grid = $("#tw-grid"); grid.style.setProperty("--hh", hh + "px");
+    grid.innerHTML = gutterHTML + `<div class="week-cols" style="width:${colsW}px;height:${24 * hh}px"><div class="week-colsbg">${colsBg}</div>${nowHTML}<div class="week-events">${cardsHTML}</div></div>`;
+    $$("#tw-grid .week-ev").forEach((el) => attachEventInteract(el));
+    if (!weekScrolled) {
+      const tgt = twScrollTo ? days.findIndex((d) => isoDate(d) === twScrollTo) : nowIdx;
+      const idx = tgt >= 0 ? tgt : (nowIdx >= 0 ? nowIdx : 0);
+      scrollEl.scrollTop = nowIdx >= 0 ? Math.max(0, nowMinutes() / 60 * hh - schedH / 2) : 9 * hh;
+      scrollEl.scrollLeft = idx > 0 ? idx * colW : 0;   // выбранный день (или сегодня) к левому краю
+      twScrollTo = null; weekScrolled = true;
+    }
+  }
+  // Перетаскивание события (перенос по времени/дню) и растягивание за нижний край
+  function attachEventInteract(el) {
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button != null && e.button !== 0) return;
+      const t = tasksById[el.dataset.id]; if (!t || !twCtx) return;
+      const { colW, hh, days } = twCtx; const startS = taskStartMin(t), dur = taskEndMin(t) - startS;
+      const rect = el.getBoundingClientRect(); const grabY = e.clientY - rect.top;
+      const resize = e.clientY > rect.bottom - Math.min(24, rect.height * 0.5);   // низ карточки = растягивание (зона крупная)
+      const startX = e.clientX, startY = e.clientY; let moved = false;
+      const colsEl = $("#tw-grid .week-cols");
+      el.classList.add("dragging"); try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      const onMove = (ev) => {
+        const dx = ev.clientX - startX, dy = ev.clientY - startY;
+        if (!moved && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+        moved = true; const cRect = colsEl.getBoundingClientRect();
+        if (resize) {
+          let endMin = Math.round(((ev.clientY - cRect.top) / hh * 60) / 15) * 15;
+          endMin = Math.max(startS + 15, Math.min(1440, endMin));
+          el.style.height = ((endMin - startS) / 60 * hh) + "px"; el.dataset.newEnd = endMin;
+        } else {
+          let startMin = Math.round((((ev.clientY - grabY) - cRect.top) / hh * 60) / 15) * 15;
+          startMin = Math.max(0, Math.min(1440 - dur, startMin));
+          let di = Math.floor((ev.clientX - cRect.left) / colW); di = Math.max(0, Math.min(days.length - 1, di));
+          el.style.top = (startMin / 60 * hh) + "px"; el.style.left = (di * colW) + "px"; el.style.width = colW + "px";
+          el.dataset.newStart = startMin; el.dataset.newDay = di;
+        }
+      };
+      const onUp = async () => {
+        try { el.releasePointerCapture(e.pointerId); } catch (_) {} window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); el.classList.remove("dragging");
+        if (!moved) { openTaskEdit(t, "tasks"); return; }
+        const prev = { due_date: t.due_date, due_time: t.due_time, end_time: t.end_time, remind_at: t.remind_at, notified: t.notified };
+        if (resize) { await Store.updateTask(t.id, { end_time: fmtHM(+el.dataset.newEnd) }); }
+        else {
+          const startMin = +el.dataset.newStart, di = +el.dataset.newDay; const newDate = days[di];
+          const newStart = fmtHM(startMin), newEnd = fmtHM(startMin + dur);
+          await Store.updateTask(t.id, { due_date: newDate, due_time: newStart, end_time: newEnd, remind_at: computeRemindAt(newDate, newStart, t.notify !== false), notified: false });
+        }
+        pushUndo("перенос", () => Store.updateTask(t.id, prev)); renderTasks();
+      };
+      window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp);
+      e.preventDefault();
+    });
   }
   let projTasksById = {}, pFilterStatuses = new Set(defaultFilterIds("task")), pDateFilter = "";
   async function renderProjectTasks() {
@@ -846,7 +1075,7 @@
     projTasksById = {}; tasks.forEach((t) => (projTasksById[t.id] = t));
     $("#p-tasks-empty").hidden = tasks.length > 0;
     $("#p-task-list").innerHTML = buildFlatTaskListHTML(tasks, { showDate: true });
-    $$("#p-task-list .task").forEach((el) => attachSwipe(el, async () => { await Store.deleteTask(el.dataset.id); renderProjectTasks(); }));
+    $$("#p-task-list .task").forEach((el) => attachSwipe(el, async () => { const o = projTasksById[el.dataset.id]; await Store.deleteTask(el.dataset.id); if (o) pushUndo("удаление задачи", () => Store.restoreTask(o)); renderProjectTasks(); }));
   }
   function isDefaultStatusSet(set) { const def = defaultFilterIds("task"); return set.size === def.length && def.every((k) => set.has(k)); }
   function applyProjFiltersUI() {
@@ -863,16 +1092,16 @@
       if (justSwiped) return;
       const el = e.target.closest(".task"); if (!el) return; const t = getMap()[el.dataset.id]; if (!t) return;
       const hit = e.target.closest("[data-act]"); const act = hit ? hit.dataset.act : null;
-      if (act === "status") { openStatusPicker("task", statusOf(t), async (k) => { await Store.updateTask(t.id, { status: k, is_done: statusIsDone("task", k) }); onChange(); }); return; }
-      if (act === "project") { openProjectPicker(t.project_id || null, async (id) => { await Store.updateTask(t.id, { project_id: id }); onChange(); }); return; }
-      if (act === "time") { openDateTime({ date: t.due_date, time: t.due_time, notify: t.notify !== false, onDone: async (date, time, notify) => { await updateTaskDateTime(t.id, date, time, notify); onChange(); } }); return; }
+      if (act === "status") { const prev = { status: t.status, is_done: t.is_done }; openStatusPicker("task", statusOf(t), async (k) => { await Store.updateTask(t.id, { status: k, is_done: statusIsDone("task", k) }); pushUndo("статус", () => Store.updateTask(t.id, prev)); onChange(); }); return; }
+      if (act === "project") { const prev = t.project_id || null; openProjectPicker(t.project_id || null, async (id) => { await Store.updateTask(t.id, { project_id: id }); pushUndo("проект", () => Store.updateTask(t.id, { project_id: prev })); onChange(); }); return; }
+      if (act === "time") { const prev = { due_date: t.due_date || null, due_time: t.due_time || null, notify: t.notify, remind_at: t.remind_at, notified: t.notified }; openDateTime({ date: t.due_date, time: t.due_time, notify: t.notify !== false, onDone: async (date, time, notify) => { await updateTaskDateTime(t.id, date, time, notify); pushUndo("дата", () => Store.updateTask(t.id, prev)); onChange(); } }); return; }
       openTaskEdit(t, returnView);
     };
   }
   $("#task-list").addEventListener("click", taskListClick(() => tasksById, renderTasks, "tasks"));
   $("#p-task-list").addEventListener("click", taskListClick(() => projTasksById, renderProjectTasks, "project"));
   // Уведомление: включено + есть дата → в это время; без времени → в 11:00; без даты → нет.
-  function computeRemindAt(date, time, notify) { if (!(notify && date)) return null; const d = new Date(`${date}T${time || "11:00"}:00`); return isNaN(d) ? null : d.toISOString(); }
+  function computeRemindAt(date, time, notify) { if (!(notify && date)) return null; const d = new Date(`${date}T${time || "11:00"}:00`); if (isNaN(d)) return null; if (time) d.setHours(d.getHours() - 1); return d.toISOString(); }   // напоминание за час до начала (если есть время)
   async function updateTaskDateTime(id, date, time, notify) { const remind_at = computeRemindAt(date, time, notify); await Store.updateTask(id, { due_date: date || null, due_time: time || null, notify, remind_at, notified: false }); }
 
   /* фильтры-кнопки */
@@ -897,9 +1126,11 @@
 
   /* ---------- КАРТОЧКА задачи (автосохранение) ---------- */
   let editingTaskId = null, cardDate = tomorrowStr(), cardTime = "12:00", cardNotify = true, cardStatus = "progress", cardProjectId = null, taskTouched = false, editReturn = "tasks";
+  let cardEndTime = "";   // дата окончания всегда = дате начала; отдельно только время окончания
   function renderCardMeta() {
     $("#t-date").textContent = cardDate ? fmtFull(cardDate) : "дата";
     $("#t-time").value = cardTime || "";
+    $("#t-end-time").value = cardEndTime || "";
     $("#t-notify").innerHTML = cardNotify ? BELL_ON : BELL_OFF; $("#t-notify").classList.toggle("off", !cardNotify);
     $("#t-status").innerHTML = statusPill("task", cardStatus);
     const p = projById(cardProjectId);
@@ -907,13 +1138,15 @@
   }
   function taskFields() {
     const remind_at = computeRemindAt(cardDate, cardTime, cardNotify);
-    return { title: $("#t-title").textContent.trim(), description: descSerialize($("#t-desc")), due_date: cardDate || null, due_time: cardTime || null, notify: cardNotify, project_id: cardProjectId || null, status: cardStatus, is_done: statusIsDone("task", cardStatus), remind_at, notified: false };
+    return { title: $("#t-title").textContent.trim(), description: descSerialize($("#t-desc")), due_date: cardDate || null, due_time: cardTime || null, end_time: cardEndTime || null, notify: cardNotify, project_id: cardProjectId || null, status: cardStatus, is_done: statusIsDone("task", cardStatus), remind_at, notified: false };
   }
   async function saveTaskDraft() { if (editingTaskId) await Store.updateTask(editingTaskId, taskFields()); }
   const saveTaskDebounced = debounce(saveTaskDraft, 400);
   $("#t-date").addEventListener("click", () => openCalendar({ value: cardDate, allowAll: true, clearLabel: "очистить дату", onPick: (v) => { cardDate = v; taskTouched = true; renderCardMeta(); saveTaskDraft(); } }));
   $("#t-time").addEventListener("input", (e) => { cardTime = e.target.value; taskTouched = true; saveTaskDraft(); });
   $("#t-time-clear").addEventListener("click", () => { cardTime = ""; $("#t-time").value = ""; taskTouched = true; saveTaskDraft(); });
+  $("#t-end-time").addEventListener("input", (e) => { cardEndTime = e.target.value; taskTouched = true; saveTaskDraft(); });
+  $("#t-end-clear").addEventListener("click", () => { cardEndTime = ""; $("#t-end-time").value = ""; taskTouched = true; saveTaskDraft(); });
   $("#t-notify").addEventListener("click", () => { cardNotify = !cardNotify; taskTouched = true; renderCardMeta(); saveTaskDraft(); });
   $("#t-status").addEventListener("click", () => openStatusPicker("task", cardStatus, (k) => { cardStatus = k; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
   $("#t-project").addEventListener("click", () => openProjectPicker(cardProjectId, (id) => { cardProjectId = id; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
@@ -926,6 +1159,7 @@
     await loadProjects();
     const firstProj = orderedProjects()[0];
     cardDate = tomorrowStr(); cardTime = ""; cardNotify = false; cardStatus = "progress"; cardProjectId = opts.projectId || (firstProj ? firstProj.id : null); taskTouched = false; editReturn = opts.returnView || "tasks";
+    cardEndTime = "";
     $("#t-title").innerText = ""; $("#t-desc").innerHTML = ""; renderCardMeta();
     const draft = await Store.addTask(taskFields()); editingTaskId = draft.id;
     $("#t-submit").textContent = "Готово"; $("#t-delete").hidden = false;
@@ -933,6 +1167,7 @@
   }
   function openTaskEdit(t, returnView) {
     editReturn = returnView || "tasks"; editingTaskId = t.id; cardDate = t.due_date || tomorrowStr(); cardTime = t.due_time || ""; cardNotify = t.notify !== false; cardStatus = statusOf(t); cardProjectId = t.project_id || null; taskTouched = true;
+    cardEndTime = t.end_time || "";
     $("#t-title").innerText = t.title || ""; descLoad($("#t-desc"), t.description || ""); renderCardMeta();
     $("#t-submit").textContent = "Готово"; $("#t-delete").hidden = false;
     showView("task");
@@ -955,7 +1190,7 @@
     showView(editReturn === "project" ? "project" : "tasks");
   }
   $("#t-submit").addEventListener("click", leaveTask);
-  $("#t-delete").addEventListener("click", async () => { if (editingTaskId && await askConfirm("Удалить задачу?")) { const rv = editReturn; await Store.deleteTask(editingTaskId); editingTaskId = null; showView(rv === "project" ? "project" : "tasks"); } });
+  $("#t-delete").addEventListener("click", async () => { if (editingTaskId && await askConfirm("Удалить задачу?")) { const rv = editReturn; const o = (await Store.tasks()).find((x) => x.id === editingTaskId); await Store.deleteTask(editingTaskId); if (o) pushUndo("удаление задачи", () => Store.restoreTask(o)); editingTaskId = null; showView(rv === "project" ? "project" : "tasks"); } });
 
   /* ---------- Канбан проектов ---------- */
   function projBadges(pid, tasks) {
@@ -997,12 +1232,14 @@
     const toCol = d.toContainer.closest(".kb-col"), fromCol = d.fromContainer.closest(".kb-col");
     const toStatus = toCol && toCol.dataset.status; if (!toStatus) return;
     const statusChanged = projStatusOf(proj) !== toStatus;
+    const prevState = {}; orderedProjects().forEach((p) => { prevState[p.id] = { status: p.status, sort: p.sort }; });
     const updates = [];
     const renumber = (colEl) => { if (!colEl) return; [...colEl.querySelectorAll(".kb-card")].forEach((c, i) => { const p = projById(c.dataset.id); if (!p) return; const patch = {}; if (p.sort !== i) { p.sort = i; patch.sort = i; } if (p === proj && statusChanged) { p.status = toStatus; patch.status = toStatus; } if (Object.keys(patch).length) updates.push({ id: p.id, patch }); }); };
     renumber(toCol); if (fromCol && fromCol !== toCol) renumber(fromCol);
     // пустые колонки снова скрыть
     $$("#kanban .kb-col").forEach((c) => c.classList.toggle("kb-col--empty", !c.querySelector(".kb-card")));
     for (const u of updates) await Store.updateProject(u.id, u.patch);
+    if (updates.length) pushUndo("перемещение", async () => { for (const u of updates) { const pv = prevState[u.id]; if (!pv) continue; await Store.updateProject(u.id, { status: pv.status, sort: pv.sort }); const p = projById(u.id); if (p) { p.status = pv.status; p.sort = pv.sort; } } });
   }
 
   /* ---------- КАРТОЧКА проекта (автосохранение) ---------- */
@@ -1052,7 +1289,7 @@
     showView("projects");
   }
   $("#p-submit").addEventListener("click", leaveProject);
-  $("#p-delete").addEventListener("click", async () => { if (editingProjectId && await askConfirm("Удалить проект?")) { await Store.deleteProject(editingProjectId); editingProjectId = null; await loadProjects(); showView("projects"); } });
+  $("#p-delete").addEventListener("click", async () => { if (editingProjectId && await askConfirm("Удалить проект?")) { const o = (await Store.projects()).find((x) => x.id === editingProjectId); await Store.deleteProject(editingProjectId); if (o) pushUndo("удаление проекта", () => Store.restoreProject(o)); editingProjectId = null; await loadProjects(); showView("projects"); } });
 
   /* ---------- ЗАМЕТКИ ---------- */
   function notePreview(body) { const t = document.createElement("div"); t.innerHTML = body || ""; return t.textContent.replace(/\s+/g, " ").trim(); }
@@ -1073,7 +1310,7 @@
         </div>
       </div>`;
     }).join("");
-    $$("#note-list .note").forEach((el) => attachSwipe(el, async () => { await Store.deleteNote(el.dataset.id); renderNotes(); }));
+    $$("#note-list .note").forEach((el) => attachSwipe(el, async () => { const o = notesById[el.dataset.id]; await Store.deleteNote(el.dataset.id); if (o) pushUndo("удаление заметки", () => Store.restoreNote(o)); renderNotes(); }));
   }
   $("#note-list").addEventListener("click", (e) => {
     if (justSwiped) return;
@@ -1133,16 +1370,18 @@
     habitsById = {}; habits.forEach((h) => (habitsById[h.id] = h));
     $("#habits-empty").hidden = habits.length > 0;
     $("#habit-list").innerHTML = habits.map(habitRow).join("");
-    $$("#habit-list .habit").forEach((el) => attachSwipe(el, async () => { await Store.deleteHabit(el.dataset.id); renderHabits(); }));
+    $$("#habit-list .habit").forEach((el) => attachSwipe(el, async () => { const o = habitsById[el.dataset.id]; await Store.deleteHabit(el.dataset.id); if (o) pushUndo("удаление привычки", () => Store.restoreHabit(o)); renderHabits(); }));
   }
   $("#habit-list").addEventListener("click", async (e) => {
     if (justSwiped) return;
     const bar = e.target.closest(".hb-bar"); if (!bar) return;   // тап по заголовку — ничего
     const row = bar.closest(".habit"); const h = habitsById[row.dataset.id]; if (!h) return;
+    const prev = { progress: h.progress, week: h.week };
     const next = habitProgress(h) >= 7 ? 0 : habitProgress(h) + 1;
     h.progress = next; h.week = habitWeek();
     [...bar.querySelectorAll(".hb-cell")].forEach((c, i) => c.classList.toggle("on", i < next));
     await Store.updateHabit(h.id, { progress: next, week: h.week });
+    pushUndo("привычка", () => Store.updateHabit(h.id, prev));
   });
 
   /* Создание Привычки */
@@ -1239,7 +1478,7 @@
       <div class="swipe-row fincat-txrow"><button class="fincat-del" data-act="del" type="button" aria-label="Удалить">${TRASH_SVG}</button><span class="fincat-date">${fmtDateLong(t.created_at)}</span><span class="fincat-note">${esc(t.note || "")}</span><span class="fincat-amount">${fmtMoney(t.amount_minor)}</span></div>
     </div>`).join("");
     finCatPageTx = list;
-    $$("#fincat-list .fincat-row").forEach((el) => attachSwipe(el, async () => { await Store.deleteFinTx(el.dataset.id); renderFinCatPage(); }));
+    $$("#fincat-list .fincat-row").forEach((el) => attachSwipe(el, async () => { const o = finCatPageTx.find((x) => x.id === el.dataset.id); await Store.deleteFinTx(el.dataset.id); if (o) pushUndo("удаление траты", () => Store.restoreFinTx(o)); renderFinCatPage(); }));
     syncFinFilters();
     $("#fincat-sort").classList.toggle("is-on", finCatSort);
     const sp = $("#fincat-sort svg path"); if (sp) sp.setAttribute("d", finCatSort ? "M4 6h16M4 12h11M4 18h6" : "M4 6h16M4 12h6M4 18h11");
@@ -1251,12 +1490,12 @@
   $("#fincat-list").addEventListener("click", async (e) => {
     if (justSwiped) return;
     const row = e.target.closest(".fincat-row"); if (!row) return; const id = row.dataset.id;
-    if (e.target.closest(".fincat-del")) { if (!(await askConfirm("Удалить трату?"))) return; await Store.deleteFinTx(id); renderFinCatPage(); return; }
+    if (e.target.closest(".fincat-del")) { if (!(await askConfirm("Удалить трату?"))) return; const o = finCatPageTx.find((t) => t.id === id); await Store.deleteFinTx(id); if (o) pushUndo("удаление траты", () => Store.restoreFinTx(o)); renderFinCatPage(); return; }
     const tx = finCatPageTx.find((t) => t.id === id); if (tx) openFinTx({ edit: tx });
   });
 
-  /* ---------- Список покупок (страница-заметка с автосохранением) ---------- */
-  let shopInited = false, shopSaveTimer = null;
+  /* ---------- Список покупок (страница-заметка с автосохранением + realtime) ---------- */
+  let shopInited = false, shopSaveTimer = null, shopChannel = null;
   async function renderShop() {
     const body = $("#shop-body");
     const html = await Store.shopList();
@@ -1267,17 +1506,40 @@
       body.addEventListener("input", scheduleShopSave);
       body.addEventListener("click", (e) => { if (e.target.closest(".chk")) scheduleShopSave(); });
     }
+    subscribeShopRealtime();
   }
   function scheduleShopSave() { clearTimeout(shopSaveTimer); shopSaveTimer = setTimeout(saveShop, 400); }
   async function saveShop() { clearTimeout(shopSaveTimer); await Store.saveShopList(descSerialize($("#shop-body"))); }
+  // Реалтайм между устройствами: при внешнем изменении строки shop_list — подтянуть, но не сбивать активный ввод
+  function subscribeShopRealtime() {
+    if (!sb || !Store.userId || shopChannel) return;
+    try {
+      shopChannel = sb.channel("shop_" + Store.userId)
+        .on("postgres_changes", { event: "*", schema: "public", table: "shop_list", filter: "user_id=eq." + Store.userId }, (payload) => {
+          const body = $("#shop-body"); const incoming = payload.new && payload.new.body;
+          if (currentView !== "shop" || !incoming) return;
+          if (document.activeElement === body) return;                 // печатает — не перетираем
+          if (descSerialize(body) === incoming) return;                // уже актуально
+          descLoad(body, incoming);
+        }).subscribe();
+    } catch (e) { shopChannel = null; }
+  }
   $("#shop-link").addEventListener("click", () => showView("shop"));
+  function shopUndoSnapshot(label) { const prev = descSerialize($("#shop-body")); pushUndo(label, async () => { await Store.saveShopList(prev); if (currentView === "shop") descLoad($("#shop-body"), prev); }); }
   $("#shop-uncheck").addEventListener("click", () => {
+    shopUndoSnapshot("отметки");
     $$("#shop-body .chk").forEach((c) => { c.setAttribute("data-checked", "0"); c.classList.remove("is-done"); });
     saveShop();
   });
+  $("#shop-reset").addEventListener("click", async () => {
+    if (!(await askConfirm("Очистить список?", "Вернётся стандартный набор категорий и позиций"))) return;
+    shopUndoSnapshot("список покупок");
+    descLoad($("#shop-body"), DEFAULT_SHOP_HTML); saveShop();
+  });
+  $("#shop-done").addEventListener("click", () => { saveShop(); showView("finance"); });
 
   /* Окно создания операции */
-  let finTxKind = "expense", finTxCatId = null, finTxIncomeOnly = false, finTxEditId = null;
+  let finTxKind = "expense", finTxCatId = null, finTxIncomeOnly = false, finTxEditId = null, finTxEditPrev = null;
   function renderFinTxCats() {
     const add = `<button type="button" class="proj-add-row" id="fintx-add-cat" aria-label="Новая категория"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 6.5v11M6.5 12h11"/></svg></button>`;
     $("#fintx-cats").innerHTML = add + finCatsCache.map((c) => `<button type="button" class="proj-pill fintx-cat ${c.id === finTxCatId ? "is-cur" : ""}" data-id="${c.id}"><span class="proj-emoji">${c.emoji || DEFAULT_EMOJI}</span><span class="proj-name">${esc(c.name)}</span><span class="status-del" data-del="${c.id}" aria-label="Удалить">×</span></button>`).join("");
@@ -1285,6 +1547,7 @@
   }
   async function openFinTx(opts) {
     opts = opts || {}; const ed = opts.edit || null; finTxEditId = ed ? ed.id : null;
+    finTxEditPrev = ed ? { kind: ed.kind, amount_minor: ed.amount_minor, category_id: ed.category_id || null, note: ed.note || null } : null;
     finTxIncomeOnly = ed ? (ed.kind === "income") : !!opts.incomeOnly;
     finTxKind = ed ? ed.kind : (finTxIncomeOnly ? "income" : "expense");
     finTxCatId = ed ? (ed.category_id || null) : (opts.preCat || null);
@@ -1307,7 +1570,9 @@
     const del = e.target.closest(".status-del");
     if (del) {
       if (!(await askConfirm("Удалить категорию?", "Операции в ней останутся без категории"))) return;
+      const co = finCatsCache.find((x) => x.id === del.dataset.del);
       await Store.deleteFinCategory(del.dataset.del);
+      if (co) pushUndo("удаление категории", () => Store.restoreFinCategory(co));
       if (finTxCatId === del.dataset.del) finTxCatId = null;
       finCatsCache = await Store.finCategories(); renderFinTxCats(); renderCurrentFin();
       return;
@@ -1321,8 +1586,8 @@
     const minor = parseMoney($("#fintx-amount").value); if (minor == null || minor <= 0) { $("#fintx-amount").focus(); return; }
     if (finTxKind === "expense" && !finTxCatId) { return; }   // для расхода нужна категория
     const catId = finTxKind === "income" ? null : finTxCatId; const note = ($("#fintx-note").value || "").trim() || null;
-    if (finTxEditId) { await Store.updateFinTx(finTxEditId, { kind: finTxKind, amount_minor: minor, category_id: catId, note }); }
-    else { await Store.addFinTx({ kind: finTxKind, amount_minor: minor, category_id: catId, note }); }
+    if (finTxEditId) { const eid = finTxEditId, prev = finTxEditPrev; await Store.updateFinTx(eid, { kind: finTxKind, amount_minor: minor, category_id: catId, note }); if (prev) pushUndo("правка траты", () => Store.updateFinTx(eid, prev)); }
+    else { const row = await Store.addFinTx({ kind: finTxKind, amount_minor: minor, category_id: catId, note }); if (row) pushUndo("новая трата", () => Store.deleteFinTx(row.id)); }
     $("#fintx-modal").hidden = true; renderCurrentFin();
   });
   $("#fintx-cancel").addEventListener("click", () => ($("#fintx-modal").hidden = true));
