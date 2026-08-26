@@ -896,10 +896,10 @@
   /* ---- Виды отображения задач: список / неделя / месяц ---- */
   let taskView = localStorage.getItem("gunco_taskview") || "list";   // list | week | month
   let tmY = null, tmM = null;                 // месяц-вид
-  let twBase = null, weekScrolled = false;    // неделя-вид: бесконечный горизонтальный скролл дней
-  const TW_PAST = 21, TW_FUTURE = 140;        // сколько дней назад/вперёд от сегодня рендерим
-  let twRange = TW_PAST + TW_FUTURE;          // всего дней; расширяется при скролле к краю
-  let twScrollTo = null;                      // ISO-день, к которому проскроллить при следующей отрисовке (тап по дате в месяце)
+  let twBase = null, weekScrolled = false;    // неделя-вид: пагинация по дням (свайп)
+  const TW_PAST = 120, TW_FUTURE = 400;       // запас дней назад/вперёд
+  let twRange = TW_PAST + TW_FUTURE;
+  let twCurIdx = null;                         // индекс текущего дня в массиве (перевод трека)
   function isoDate(dt) { return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`; }
   function parseISO(s) { const [y, m, d] = s.slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); }
   function addDays(dt, n) { const d = new Date(dt); d.setDate(d.getDate() + n); return d; }
@@ -912,7 +912,13 @@
   $$("#task-views .view-btn").forEach((b) => b.addEventListener("click", () => setTaskView(b.dataset.tview)));
   $("#tm-prev").addEventListener("click", () => { tmM--; if (tmM < 0) { tmM = 11; tmY--; } renderTasks(); });
   $("#tm-next").addEventListener("click", () => { tmM++; if (tmM > 11) { tmM = 0; tmY++; } renderTasks(); });
-  function openWeekAt(ds) { twBase = addDays(parseISO(ds), -TW_PAST); twScrollTo = ds; weekScrolled = false; setTaskView("week"); }
+  // Свайп по месяцам (в дополнение к стрелкам)
+  (function () {
+    const g = $("#task-month"); let sx = 0, sy = 0, on = false;
+    g.addEventListener("touchstart", (e) => { if (e.touches.length !== 1) { on = false; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true });
+    g.addEventListener("touchend", (e) => { if (!on) return; on = false; const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { if (dx < 0) { tmM++; if (tmM > 11) { tmM = 0; tmY++; } } else { tmM--; if (tmM < 0) { tmM = 11; tmY--; } } renderTasks(); } }, { passive: true });
+  })();
+  function openWeekAt(ds) { twBase = addDays(parseISO(ds), -TW_PAST); twCurIdx = TW_PAST; weekScrolled = false; setTaskView("week"); }
 
   async function renderTasks() {
     let tasks = await Store.tasks();
@@ -947,18 +953,16 @@
     }
     return evs;
   }
-  $("#tw-today").addEventListener("click", () => { twBase = addDays(new Date(), -TW_PAST); twRange = TW_PAST + TW_FUTURE; weekScrolled = false; renderTasks(); });
+  $("#tw-today").addEventListener("click", () => { twBase = addDays(new Date(), -TW_PAST); twRange = TW_PAST + TW_FUTURE; twCurIdx = TW_PAST; weekScrolled = false; renderTasks(); });
   $("#tm-today").addEventListener("click", () => { const n = new Date(); tmY = n.getFullYear(); tmM = n.getMonth(); renderTasks(); });
-  // Бесконечный горизонтальный скролл: у краёв дорисовываем дни
-  let twExtendBusy = false, weekTasksCache = [];
-  $("#tw-scroll").addEventListener("scroll", () => {
-    if (taskView !== "week" || twExtendBusy || !twCtx) return;
-    const el = $("#tw-scroll"), colW = twCtx.colW;
-    if (el.scrollLeft + el.clientWidth > el.scrollWidth - colW * 3) { twExtendBusy = true; twRange += 56; weekScrolled = true; renderWeekView(weekTasksCache); twExtendBusy = false; }
-    else if (el.scrollLeft < colW * 3) { twExtendBusy = true; const sl = el.scrollLeft; twBase = addDays(twBase, -56); twRange += 56; weekScrolled = true; renderWeekView(weekTasksCache); el.scrollLeft = sl + 56 * colW; twExtendBusy = false; }
-  });
-  function updateNowLine() { if (taskView !== "week") return; const el = $("#tw-grid .week-now"); const grid = $("#tw-grid"); if (!el || !grid) return; const hh = parseFloat(getComputedStyle(grid).getPropertyValue("--hh")) || 60; el.style.top = (nowMinutes() / 60 * hh) + "px"; }
+  let weekTasksCache = [];
+  function updateNowLine() { if (taskView !== "week") return; const el = $("#tw-bodytrack .week-now"); const grid = $("#tw-grid"); if (!el || !grid) return; const hh = parseFloat(getComputedStyle(grid).getPropertyValue("--hh")) || 60; el.style.top = (nowMinutes() / 60 * hh) + "px"; }
   setInterval(updateNowLine, 60000);
+  function statusBadgesFor(list) {
+    const counts = {};
+    list.forEach((t) => { const s = statusOf(t); if (!statusIsDone("task", s)) counts[s] = (counts[s] || 0) + 1; });
+    return statusSet("task").filter((s) => !s.done && counts[s.id]).map((s) => ({ c: s.c, count: counts[s.id] }));
+  }
 
   function renderMonthView(tasks) {
     if (tmY == null) { const n = new Date(); tmY = n.getFullYear(); tmM = n.getMonth(); }
@@ -978,73 +982,95 @@
     $$("#tm-grid .tm-day[data-d]").forEach((b) => b.addEventListener("click", () => openWeekAt(b.dataset.d)));
   }
 
-  let twCtx = null;   // { colW, hh, days:[ISO] } — контекст текущей отрисовки недели для drag
+  let twCtx = null;   // { colW, hh, days:[ISO] }
   function renderWeekView(tasks) {
     weekTasksCache = tasks;
     if (!twBase) twBase = addDays(new Date(), -TW_PAST);
+    if (twCurIdx == null) twCurIdx = TW_PAST;
     const days = Array.from({ length: twRange }, (_, i) => addDays(twBase, i)); const today = todayStr();
-    const scrollEl = $("#tw-scroll"); const gutter = 46;
-    const contW = scrollEl.clientWidth || window.innerWidth;
-    const mobile = window.innerWidth < 768; const avail = contW - gutter;
-    const colW = mobile ? Math.round(avail / 1.3) : Math.max(240, Math.floor(avail / 7));
-    const schedH = scrollEl.clientHeight || 480; const hh = Math.round(Math.max(40, schedH / 11) * 1.5);   // шаг часа ×1.5
-    const colsW = colW * days.length; const canvasW = gutter + colsW;
-    $(".week-canvas").style.width = canvasW + "px";
+    const scrollEl = $("#tw-scroll");
+    const vpW = $("#tw-bodyvp").clientWidth || (window.innerWidth - 52);
+    const mobile = window.innerWidth < 768;
+    const colW = Math.round(vpW * 0.8);   // текущий день 80% + peek следующего 20%
+    const schedH = scrollEl.clientHeight || 480;
+    const hh = mobile ? Math.round(Math.max(40, schedH / 11) * 2.25) : Math.round(Math.max(40, schedH / 11) * 1.5);   // моб. крупнее: 30 мин = прежние 45 мин
     twCtx = { colW, hh, days: days.map(isoDate) };
-    $("#tw-days").innerHTML = `<span class="week-gutter-h" style="width:${gutter}px"></span>` + days.map((d) => {
-      const ds = isoDate(d);
-      return `<span class="week-dcol${ds === today ? " today" : ""}${isWeekend(d) ? " weekend" : ""}" style="width:${colW}px"><span class="week-dcol-pill"><span class="week-wd">${WEEKDAYS[d.getDay()]}</span><span class="week-dnum">${d.getDate()}</span></span></span>`;
-    }).join("");
-    const gutterHTML = `<div class="week-gutter" style="width:${gutter}px;height:${24 * hh}px">` + Array.from({ length: 24 }, (_, h) => `<span class="week-hour" style="top:${h * hh}px">${pad(h)}:00</span>`).join("") + `</div>`;
-    const colsBg = days.map((d) => `<div class="week-col${isoDate(d) === today ? " today" : ""}${isWeekend(d) ? " weekend" : ""}" style="width:${colW}px"></div>`).join("");
-    const byDay = tasksByDay(tasks); let cardsHTML = "";
+    // гуттер часов — фикс слева, всегда виден
+    $("#tw-gutter").style.height = (24 * hh) + "px";
+    $("#tw-gutter").innerHTML = Array.from({ length: 24 }, (_, h) => `<span class="week-hour" style="top:${h * hh}px">${pad(h)}:00</span>`).join("");
+    const byDay = tasksByDay(tasks);
+    const colsBg = days.map((d) => `<div class="week-col2${isoDate(d) === today ? " today" : ""}${isWeekend(d) ? " weekend" : ""}" style="width:${colW}px"></div>`).join("");
+    let cardsHTML = "";
     days.forEach((d, di) => {
-      const ds = isoDate(d);
-      const list = (byDay[ds] || []).filter((t) => taskStartMin(t) != null);
+      const list = (byDay[isoDate(d)] || []).filter((t) => taskStartMin(t) != null);
       layoutDay(list).forEach((ev) => {
-        const { t, s, e, col, cols } = ev; const dur = e - s; const top = s / 60 * hh; const height = Math.max(20, dur / 60 * hh);
+        const { t, s, e, col, cols } = ev; const dur = e - s; const top = s / 60 * hh; const height = Math.max(18, dur / 60 * hh);
         const w = colW / cols, left = di * colW + col * w; const p = projById(t.project_id);
-        const mini = dur < 30 ? " week-ev--mini" : "";   // <30 мин — только заголовок
+        const mini = dur < 30 ? " week-ev--mini" : "";
         const meta = `<span class="week-ev-side">${p ? `<span class="week-ev-proj proj-pill">${projPillInner(p)}</span>` : ""}<span class="week-ev-time">${fmtHM(s)}</span>${t.notify ? `<span class="week-ev-bell">${BELL_ON}</span>` : ""}</span>`;
         cardsHTML += `<div class="week-ev${mini}" data-id="${t.id}" style="top:${top}px;left:${left}px;width:${w}px;height:${height}px;--c:${statusColor("task", statusOf(t))}"><div class="week-ev-body"><span class="week-ev-title">${esc(t.title)}</span>${meta}</div><span class="week-ev-resize" aria-hidden="true"></span></div>`;
       });
     });
     const nowIdx = days.findIndex((d) => isoDate(d) === today);
     const nowHTML = nowIdx >= 0 ? `<div class="week-now" style="top:${nowMinutes() / 60 * hh}px;left:${nowIdx * colW}px;width:${colW}px"></div>` : "";
-    const grid = $("#tw-grid"); grid.style.setProperty("--hh", hh + "px");
-    grid.innerHTML = gutterHTML + `<div class="week-cols" style="width:${colsW}px;height:${24 * hh}px"><div class="week-colsbg">${colsBg}</div>${nowHTML}<div class="week-events">${cardsHTML}</div></div>`;
-    $$("#tw-grid .week-ev").forEach((el) => attachEventInteract(el));
+    const track = $("#tw-bodytrack"); $("#tw-grid").style.setProperty("--hh", hh + "px");
+    track.style.width = (colW * days.length) + "px"; track.style.height = (24 * hh) + "px";
+    track.innerHTML = `<div class="week-colsbg2">${colsBg}</div>${nowHTML}<div class="week-events2">${cardsHTML}</div>`;
+    $$("#tw-bodytrack .week-ev").forEach((el) => attachEventInteract(el));
+    applyWeekTransform(false); updateWeekHeader();
     if (!weekScrolled) {
-      const tgt = twScrollTo ? days.findIndex((d) => isoDate(d) === twScrollTo) : nowIdx;
-      const idx = tgt >= 0 ? tgt : (nowIdx >= 0 ? nowIdx : 0);
-      scrollEl.scrollTop = nowIdx >= 0 ? Math.max(0, nowMinutes() / 60 * hh - schedH / 2) : 9 * hh;
-      scrollEl.scrollLeft = idx > 0 ? idx * colW : 0;   // выбранный день (или сегодня) к левому краю
-      twScrollTo = null; weekScrolled = true;
+      const curIsToday = days[twCurIdx] && isoDate(days[twCurIdx]) === today;
+      scrollEl.scrollTop = curIsToday ? Math.max(0, nowMinutes() / 60 * hh - schedH / 2) : 9 * hh;
+      weekScrolled = true;
     }
   }
-  // Перетаскивание события (перенос по времени/дню) и растягивание за нижний край
+  function applyWeekTransform(animate) {
+    if (!twCtx) return;
+    const track = $("#tw-bodytrack"); track.style.transition = animate ? "transform .22s ease" : "none";
+    track.style.transform = `translateX(${-twCurIdx * twCtx.colW}px)`;
+  }
+  function updateWeekHeader() {
+    const d = addDays(twBase, twCurIdx); const ds = isoDate(d); const wknd = isWeekend(d);
+    $("#tw-month").textContent = MONTHS[d.getMonth()].toLowerCase();
+    $("#tw-daylabel").innerHTML = `<span class="week-wd2${wknd ? " weekend" : ""}">${WEEKDAYS[d.getDay()]}</span><span class="week-dnum2${wknd ? " weekend" : ""}">${d.getDate()}</span>`;
+    const timeless = weekTasksCache.filter((t) => (t.due_date || "").slice(0, 10) === ds && taskStartMin(t) == null);
+    const btn = $("#tw-others");
+    if (timeless.length) { btn.hidden = false; btn.dataset.d = ds; btn.innerHTML = `<span class="week-others-label">Другие задачи</span><span class="kb-badges">${statusBadgesFor(timeless).map((b) => `<span class="kb-badge" style="--c:${b.c}">${b.count}</span>`).join("")}</span>`; }
+    else btn.hidden = true;
+  }
+  function goDay(delta) { if (!twCtx) return; twCurIdx = Math.max(0, Math.min(twCtx.days.length - 1, twCurIdx + delta)); applyWeekTransform(true); updateWeekHeader(); }
+  $("#tw-others").addEventListener("click", () => { const ds = $("#tw-others").dataset.d; if (!ds) return; dateFilter = ds; applyFiltersUI(); saveFilters(); setTaskView("list"); });
+  // Свайп по дням (touch) + горизонтальный wheel (трекпад)
+  (function () {
+    const vp = $("#tw-bodyvp"); let sx = 0, sy = 0, on = false;
+    vp.addEventListener("touchstart", (e) => { if (e.touches.length !== 1 || e.target.closest(".week-ev")) { on = false; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true });
+    vp.addEventListener("touchmove", (e) => { if (!on) return; if (Math.abs(e.touches[0].clientY - sy) > Math.abs(e.touches[0].clientX - sx)) on = false; }, { passive: true });
+    vp.addEventListener("touchend", (e) => { if (!on) return; on = false; const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) goDay(dx < 0 ? 1 : -1); }, { passive: true });
+    let wlock = 0;
+    vp.addEventListener("wheel", (e) => { if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 18) { e.preventDefault(); const n = Date.now(); if (n - wlock > 380) { wlock = n; goDay(e.deltaX > 0 ? 1 : -1); } } }, { passive: false });
+  })();
+  // Перетаскивание события (перенос) и растягивание нижнего края — с компенсацией desktop-zoom
   function attachEventInteract(el) {
     el.addEventListener("pointerdown", (e) => {
       if (e.button != null && e.button !== 0) return;
       const t = tasksById[el.dataset.id]; if (!t || !twCtx) return;
       const { colW, hh, days } = twCtx; const startS = taskStartMin(t), dur = taskEndMin(t) - startS;
-      const rect = el.getBoundingClientRect(); const grabY = e.clientY - rect.top;
-      const resize = e.clientY > rect.bottom - Math.min(24, rect.height * 0.5);   // низ карточки = растягивание (зона крупная)
+      const track = $("#tw-bodytrack"); const z = dndZoom(track);
+      const rect = el.getBoundingClientRect(); const grabY = (e.clientY - rect.top) / z;
+      const resize = e.clientY > rect.bottom - Math.min(24, rect.height * 0.5);
       const startX = e.clientX, startY = e.clientY; let moved = false;
-      const colsEl = $("#tw-grid .week-cols");
       el.classList.add("dragging"); try { el.setPointerCapture(e.pointerId); } catch (_) {}
       const onMove = (ev) => {
         const dx = ev.clientX - startX, dy = ev.clientY - startY;
         if (!moved && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
-        moved = true; const cRect = colsEl.getBoundingClientRect();
+        moved = true; const cRect = track.getBoundingClientRect();
+        const localY = (ev.clientY - cRect.top) / z, localX = (ev.clientX - cRect.left) / z;
         if (resize) {
-          let endMin = Math.round(((ev.clientY - cRect.top) / hh * 60) / 15) * 15;
-          endMin = Math.max(startS + 15, Math.min(1440, endMin));
+          let endMin = Math.max(startS + 15, Math.min(1440, Math.round((localY / hh * 60) / 15) * 15));
           el.style.height = ((endMin - startS) / 60 * hh) + "px"; el.dataset.newEnd = endMin;
         } else {
-          let startMin = Math.round((((ev.clientY - grabY) - cRect.top) / hh * 60) / 15) * 15;
-          startMin = Math.max(0, Math.min(1440 - dur, startMin));
-          let di = Math.floor((ev.clientX - cRect.left) / colW); di = Math.max(0, Math.min(days.length - 1, di));
+          let startMin = Math.max(0, Math.min(1440 - dur, Math.round(((localY - grabY) / hh * 60) / 15) * 15));
+          let di = Math.max(0, Math.min(days.length - 1, Math.floor(localX / colW)));
           el.style.top = (startMin / 60 * hh) + "px"; el.style.left = (di * colW) + "px"; el.style.width = colW + "px";
           el.dataset.newStart = startMin; el.dataset.newDay = di;
         }

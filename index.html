@@ -96,12 +96,17 @@
           <div class="cal-head"><div class="cal-nav-row"><button id="tm-prev" class="cal-nav" type="button" aria-label="Назад">‹</button><div id="tm-title" class="cal-title"></div><button id="tm-next" class="cal-nav" type="button" aria-label="Вперёд">›</button></div><button id="tm-today" class="cal-today" type="button">сегодня</button></div>
           <div id="tm-grid" class="tm-grid"></div>
         </div>
-        <!-- ВИД: НЕДЕЛЯ (расписание, бесконечный горизонтальный скролл) -->
+        <!-- ВИД: НЕДЕЛЯ (день за днём, свайп; 80% текущий день + 20% peek) -->
         <div id="task-week" class="task-week" hidden>
+          <div id="tw-head" class="week-head2">
+            <span id="tw-month" class="week-month"></span>
+            <span id="tw-daylabel" class="week-daylabel"></span>
+            <button id="tw-others" class="week-others" type="button" hidden></button>
+          </div>
           <div id="tw-scroll" class="week-scroll scroll">
-            <div class="week-canvas">
-              <div id="tw-days" class="week-days"></div>
-              <div id="tw-grid" class="week-grid"></div>
+            <div id="tw-grid" class="week-grid2">
+              <div id="tw-gutter" class="week-gutter2"></div>
+              <div id="tw-bodyvp" class="week-bodyvp"><div id="tw-bodytrack" class="week-bodytrack"></div></div>
             </div>
           </div>
           <button id="tw-today" class="week-today-btn" type="button">сегодня</button>

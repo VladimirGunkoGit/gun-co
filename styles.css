@@ -164,7 +164,7 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .cal-head{ display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:40px; flex:none; }   /* отступ до календаря ×4 */
 .cal-nav-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; }
 .cal-nav{ flex:none; background:transparent; border:none; color:var(--fg); font-size:22px; line-height:1; cursor:pointer; padding:2px 6px; }
-.cal-head .cal-title{ flex:1; min-width:0; text-align:center; font-family:var(--font-title); font-weight:600; font-size:clamp(19px, 5.6vw, 26px); text-transform:lowercase; letter-spacing:.01em; }   /* заголовок месяца (уменьшен ×1.25) */
+.cal-head .cal-title{ flex:1; min-width:0; text-align:center; font-family:var(--font-title); font-weight:500; font-size:15px; text-transform:lowercase; letter-spacing:.01em; }   /* = размер шрифта кнопок «Готово» */
 .cal-today{ flex:none; background:var(--inactive-bg); border:none; color:var(--fg); font-size:12px; text-transform:lowercase; border-radius:999px; padding:6px 14px; cursor:pointer; }
 .tm-wds{ display:grid; grid-template-columns:repeat(7,1fr); gap:2px; margin-bottom:4px; }
 .tm-wd{ font-size:10px; color:var(--muted); text-align:center; letter-spacing:.06em; }
@@ -180,37 +180,36 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .tm-cnt{ font-size:9px; color:var(--muted); margin-left:1px; }
 /* Десктоп / ландшафт-планшеты: месяц компактнее по высоте — весь календарь и все даты на виду, без скролла (строки заполняют доступную высоту) */
 @media (min-width:768px) and (orientation:landscape){
-  .task-month{ overflow:hidden; }
+  .task-month{ overflow:auto; }
   #task-month .cal-head{ margin-bottom:18px; }
   #tm-grid{ flex:1; min-height:0; display:flex; flex-direction:column; }
-  #tm-grid .tm-days{ flex:1; min-height:0; grid-auto-rows:1fr; }
+  #tm-grid .tm-days{ flex:1; min-height:0; grid-auto-rows:minmax(44px, 1fr); }   /* заполняет высоту; если не влезает (ландшафт-телефон) — скролл */
   #tm-grid .tm-day{ aspect-ratio:auto; min-height:0; }
 }
 
 /* ==== Вид задач: НЕДЕЛЯ (расписание) — минимализм ==== */
 .task-week{ flex:1; min-height:0; display:flex; flex-direction:column; }
-.week-head{ display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:8px; flex:none; }
-.week-head .cal-nav-row{ gap:10px; }
-.week-title{ flex:1; min-width:0; font-size:15px; text-transform:lowercase; text-align:center; }
-.week-scroll{ flex:1; min-height:0; overflow:auto; -webkit-overflow-scrolling:touch; }
-.week-canvas{ position:relative; }
-.week-days{ position:sticky; top:0; z-index:3; display:flex; background:var(--bg); border-bottom:1px solid rgba(128,128,128,.18); }
-.week-gutter-h{ flex:none; }
-.week-dcol{ flex:none; display:flex; justify-content:center; padding:6px 0; border-left:1px solid rgba(128,128,128,.13); }
-.week-dcol-pill{ display:flex; flex-direction:column; align-items:center; gap:1px; padding:4px 12px; border-radius:12px; }
-.week-dcol.today .week-dcol-pill{ background:var(--inactive-bg); }   /* сегодня = подложка на дате, не колонка */
-.week-wd{ font-family:var(--font-title); font-weight:500; font-size:12px; color:var(--muted); letter-spacing:.03em; }
-.week-dnum{ font-family:var(--font-title); font-weight:600; font-size:20px; color:var(--text-soft); }
-.week-dcol.today .week-dnum{ color:var(--fg); }
-.week-dcol.weekend .week-wd, .week-dcol.weekend .week-dnum{ color:rgb(232,155,184); }
-.week-grid{ display:flex; position:relative; }
-.week-gutter{ flex:none; position:relative; }
+/* компактная непрозрачная шапка: месяц слева + текущий день + «Другие задачи» */
+.week-head2{ flex:none; display:flex; align-items:center; gap:10px; padding:5px 4px; background:var(--bg); border-bottom:1px solid rgba(128,128,128,.18); }
+.week-month{ flex:none; font-family:var(--font-title); font-weight:500; font-size:15px; text-transform:lowercase; color:var(--text-soft); }   /* = размер кнопки «Готово» */
+.week-daylabel{ flex:none; display:flex; align-items:baseline; gap:6px; }
+.week-wd2{ font-family:var(--font-title); font-weight:500; font-size:12px; color:var(--muted); }
+.week-dnum2{ font-family:var(--font-title); font-weight:600; font-size:17px; color:var(--fg); }
+.week-wd2.weekend, .week-dnum2.weekend{ color:rgb(232,155,184); }
+.week-others{ margin-left:auto; display:inline-flex; align-items:center; gap:8px; background:var(--field-bg); color:var(--text-soft); border:none; border-radius:8px; padding:4px 10px; cursor:pointer; font-size:12px; }
+.week-others-label{ white-space:nowrap; }
+/* тело: фикс-гуттер часов слева + вьюпорт с треком дней */
+.week-scroll{ flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; }
+.week-grid2{ display:flex; position:relative; align-items:flex-start; }
+.week-gutter2{ flex:none; width:52px; position:relative; }
 .week-hour{ position:absolute; right:6px; transform:translateY(-50%); font-size:10px; color:var(--muted); }
-.week-cols{ position:relative; }
-.week-colsbg{ position:absolute; inset:0; display:flex; }
-.week-col{ flex:none; height:100%; border-left:1px solid rgba(128,128,128,.13); background:repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--hh) - 1px), rgba(128,128,128,.12) calc(var(--hh) - 1px), rgba(128,128,128,.12) var(--hh)); }
-.week-now{ position:absolute; left:0; height:2px; background:#fff; z-index:4; pointer-events:none; box-shadow:0 0 3px rgba(0,0,0,.5); }
-.week-events{ position:absolute; inset:0; }
+.week-bodyvp{ flex:1; min-width:0; position:relative; overflow:hidden; }
+.week-bodytrack{ position:relative; will-change:transform; }
+.week-colsbg2{ position:absolute; inset:0; display:flex; }
+.week-col2{ flex:none; height:100%; border-left:1px solid rgba(128,128,128,.13); background:repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--hh) - 1px), rgba(128,128,128,.12) calc(var(--hh) - 1px), rgba(128,128,128,.12) var(--hh)); }
+.week-col2.today{ background-color:rgba(128,128,128,.04); }
+.week-now{ position:absolute; height:2px; background:#fff; z-index:4; pointer-events:none; box-shadow:0 0 3px rgba(0,0,0,.5); }
+.week-events2{ position:absolute; inset:0; }
 .week-ev{ position:absolute; overflow:hidden; text-align:left; border-radius:6px; padding:4px 7px; cursor:pointer; touch-action:none; background:color-mix(in srgb, rgb(var(--c)) 26%, var(--bg)); border-left:2px solid rgb(var(--c)); color:var(--fg); }
 .week-ev.dragging{ opacity:.92; z-index:6; box-shadow:0 8px 22px rgba(0,0,0,.45); }
 .week-ev-body{ display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; }   /* текст по верх-лево */
@@ -467,9 +466,9 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 /* Десктоп/планшеты — меню выравнивается по левому краю */
 @media (min-width:768px){ #page-nav{ justify-content:flex-start; } }
 
-/* Комп-версия: всё крупнее в 1.25× (эквивалент браузерных 125%) */
+/* Комп-версия: весь интерфейс в 90% (эквивалент браузерных 90%) */
 @media (min-width:1000px){
-  html{ zoom:1.25; overflow:hidden; }
-  .auth, .app{ height:calc(100vh / 1.25); height:calc(100dvh / 1.25); }
+  html{ zoom:0.9; overflow:hidden; }
+  .auth, .app{ height:calc(100vh / 0.9); height:calc(100dvh / 0.9); }
 }
 
