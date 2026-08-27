@@ -379,7 +379,9 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .meta-time-label{ font-family:var(--font-body); font-size:14px; line-height:20px; color:var(--text-soft); min-width:42px; white-space:nowrap; pointer-events:none; }
 .meta-time-label.empty{ padding:0; color:var(--muted); }
 .meta-time-input{ position:absolute; inset:0; width:100%; height:100%; margin:0; padding:0; border:none; background:transparent; opacity:0; cursor:pointer; -webkit-appearance:none; appearance:none; font-size:14px; color:var(--text-soft); }
-.meta-timebox--time .meta-time-clear{ position:relative; z-index:2; }
+.meta-timebox--time{ cursor:pointer; }
+.meta-timebox--time .meta-time-input{ pointer-events:none; }
+.meta-timebox--time .meta-time-clear{ position:relative; z-index:2; pointer-events:auto; }
 .meta-time-clear{ flex:none; border:none; background:transparent; color:var(--muted); display:inline-flex; align-items:center; justify-content:center; padding:0 2px; cursor:pointer; }
 .meta-time-clear:active{ opacity:.5; }
 .meta-bell{ padding:6px 9px; color:var(--text-soft); }
@@ -434,8 +436,12 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 /* Корзинки очистки (дата/время) */
 .trash-btn{ flex:none; width:30px; height:30px; padding:0; border:none; background:transparent; color:var(--muted); display:inline-flex; align-items:center; justify-content:center; border-radius:8px; cursor:pointer; }
 .trash-btn:active{ opacity:.5; }
-.dt-time-row{ display:flex; align-items:center; gap:8px; }
+.dt-time-row{ display:flex; align-items:flex-start; gap:10px; }
 .dt-time-row .time-input{ flex:1; width:auto; }
+.dt-time-field{ display:flex; flex-direction:column; gap:5px; flex:1; }
+.dt-time-cap{ font-family:var(--font-body); font-size:12px; color:var(--muted); padding-left:2px; }
+.dt-time-field .meta-timebox{ justify-content:space-between; }
+.dt-time-field .meta-time-label{ font-size:16px; }
 .meta-trash{ flex:none; border:none; background:transparent; color:var(--muted); display:inline-flex; align-items:center; justify-content:center; padding:6px 2px; cursor:pointer; }
 .meta-trash:active{ opacity:.5; }
 /* Убираем нативную иконку-часы у полей времени — редактируем тапом/клавиатурой */

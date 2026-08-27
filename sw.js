@@ -1,10 +1,10 @@
 /* gun.co service worker — офлайн-кэш оболочки */
-const CACHE = "gunco-v98";
+const CACHE = "gunco-v99";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=98",
-  "./app.js?v=98",
+  "./styles.css?v=99",
+  "./app.js?v=99",
   "./config.js",
   "./manifest.webmanifest",
   "./icons/rose.svg",

@@ -535,10 +535,13 @@
   $("#cal").addEventListener("click", (e) => { if (e.target.id === "cal") $("#cal").hidden = true; });
 
   /* ---------- Дата+время+уведомление (большое окно, для главной) ---------- */
-  const dt = { y: 0, m: 0, date: "", time: "", notify: true, onDone: null };
-  function openDateTime({ date, time, notify, onDone }) {
-    const base = (date || todayStr()).split("-"); dt.y = +base[0]; dt.m = +base[1] - 1; dt.date = date || ""; dt.time = time || ""; dt.notify = notify !== false; dt.onDone = onDone;
-    $("#dt-time").value = dt.time; $("#dt-notify").classList.toggle("off", !dt.notify); drawDtCal(); $("#datetime-modal").hidden = false;
+  const dt = { y: 0, m: 0, date: "", time: "", endTime: "", notify: true, onDone: null };
+  function dtSetTimeLabel(id, val) { const el = $(id); el.textContent = val || "--:--"; el.classList.toggle("empty", !val); }
+  function dtRenderTime() { dtSetTimeLabel("#dt-time-label", $("#dt-time").value); dtSetTimeLabel("#dt-end-label", $("#dt-end-time").value); }
+  function openDateTime({ date, time, endTime, notify, onDone }) {
+    const base = (date || todayStr()).split("-"); dt.y = +base[0]; dt.m = +base[1] - 1; dt.date = date || ""; dt.time = time || ""; dt.endTime = endTime || ""; dt.notify = notify !== false; dt.onDone = onDone;
+    $("#dt-time").value = dt.time; $("#dt-end-time").value = dt.endTime; dtRenderTime();
+    $("#dt-notify").classList.toggle("off", !dt.notify); drawDtCal(); $("#datetime-modal").hidden = false;
   }
   function drawDtCal() { drawCal({ y: dt.y, m: dt.m, value: dt.date }, $("#dt-grid"), $("#dt-title"), (d) => { dt.date = d; drawDtCal(); }); }
   $("#dt-prev").addEventListener("click", () => { dt.m--; if (dt.m < 0) { dt.m = 11; dt.y--; } drawDtCal(); });
@@ -547,9 +550,14 @@
   $("#dt-notify").addEventListener("click", () => $("#dt-notify").classList.toggle("off"));
   $("#dt-cancel").addEventListener("click", () => ($("#datetime-modal").hidden = true));
   $("#datetime-modal").addEventListener("click", (e) => { if (e.target.id === "datetime-modal") $("#datetime-modal").hidden = true; });
-  $("#dt-done").addEventListener("click", () => { $("#datetime-modal").hidden = true; if (dt.onDone) dt.onDone(dt.date, $("#dt-time").value, !$("#dt-notify").classList.contains("off")); });
+  $("#dt-done").addEventListener("click", () => { $("#datetime-modal").hidden = true; if (dt.onDone) dt.onDone(dt.date, $("#dt-time").value, $("#dt-end-time").value, !$("#dt-notify").classList.contains("off")); });
   $("#dt-cal-clear").addEventListener("click", () => { dt.date = ""; drawDtCal(); });
-  $("#dt-time-clear").addEventListener("click", () => { $("#dt-time").value = ""; });
+  // Ввод времени начала: обновить подпись; если конец пуст — по дефолту начало + 15 мин.
+  $("#dt-time").addEventListener("input", () => { if ($("#dt-time").value && !$("#dt-end-time").value) $("#dt-end-time").value = defaultEndTime($("#dt-time").value); dtRenderTime(); });
+  $("#dt-end-time").addEventListener("input", () => dtRenderTime());
+  $("#dt-time-clear").addEventListener("click", () => { $("#dt-time").value = ""; dtRenderTime(); });
+  $("#dt-end-clear").addEventListener("click", () => { $("#dt-end-time").value = ""; dtRenderTime(); });
+  wireTimeBox($("#dt-time")); wireTimeBox($("#dt-end-time"));
 
   /* ---------- Статус: пикер (одиночный) + создание/удаление кастомных ---------- */
   function statusAddBtn() { return `<button type="button" class="status-add" aria-label="Новый статус"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 6.5v11M6.5 12h11"/></svg></button>`; }
@@ -920,7 +928,18 @@
   })();
   function openWeekAt(ds) { twBase = addDays(parseISO(ds), -TW_PAST); twCurIdx = TW_PAST; weekScrolled = false; setTaskView("week"); }
 
+  // Одноразовая миграция: всем задачам со временем начала, но без времени конца, назначить конец = начало + 15 мин.
+  async function applyDefaultEndTimes() {
+    try {
+      if (localStorage.getItem("gunco_endtime_def_v1")) return;
+      if (sb && !Store.userId) return;   // в облачном режиме ждём логина, иначе флаг выставится на пустых задачах
+      const tasks = await Store.tasks();
+      for (const t of tasks) { if (t.due_time && !t.end_time) { const et = defaultEndTime(t.due_time); if (et) await Store.updateTask(t.id, { end_time: et }); } }
+      localStorage.setItem("gunco_endtime_def_v1", "1");
+    } catch (e) {}
+  }
   async function renderTasks() {
+    await applyDefaultEndTimes();
     let tasks = await Store.tasks();
     tasks = tasks.filter((t) => filterStatuses.has(statusOf(t)));
     if (filterProjects.size) tasks = tasks.filter((t) => filterProjects.has(t.project_id));
@@ -1137,7 +1156,7 @@
       const hit = e.target.closest("[data-act]"); const act = hit ? hit.dataset.act : null;
       if (act === "status") { const prev = { status: t.status, is_done: t.is_done }; openStatusPicker("task", statusOf(t), async (k) => { await Store.updateTask(t.id, { status: k, is_done: statusIsDone("task", k) }); pushUndo("статус", () => Store.updateTask(t.id, prev)); onChange(); }); return; }
       if (act === "project") { const prev = t.project_id || null; openProjectPicker(t.project_id || null, async (id) => { await Store.updateTask(t.id, { project_id: id }); pushUndo("проект", () => Store.updateTask(t.id, { project_id: prev })); onChange(); }); return; }
-      if (act === "time") { const prev = { due_date: t.due_date || null, due_time: t.due_time || null, notify: t.notify, remind_at: t.remind_at, notified: t.notified }; openDateTime({ date: t.due_date, time: t.due_time, notify: t.notify !== false, onDone: async (date, time, notify) => { await updateTaskDateTime(t.id, date, time, notify); pushUndo("дата", () => Store.updateTask(t.id, prev)); onChange(); } }); return; }
+      if (act === "time") { const prev = { due_date: t.due_date || null, due_time: t.due_time || null, end_time: t.end_time || null, notify: t.notify, remind_at: t.remind_at, notified: t.notified }; openDateTime({ date: t.due_date, time: t.due_time, endTime: t.end_time, notify: t.notify !== false, onDone: async (date, time, endTime, notify) => { await updateTaskDateTime(t.id, date, time, endTime, notify); pushUndo("дата", () => Store.updateTask(t.id, prev)); onChange(); } }); return; }
       openTaskEdit(t, returnView);
     };
   }
@@ -1145,7 +1164,15 @@
   $("#p-task-list").addEventListener("click", taskListClick(() => projTasksById, renderProjectTasks, "project"));
   // Уведомление: включено + есть дата → в это время; без времени → в 11:00; без даты → нет.
   function computeRemindAt(date, time, notify) { if (!(notify && date)) return null; const d = new Date(`${date}T${time || "11:00"}:00`); if (isNaN(d)) return null; if (time) d.setHours(d.getHours() - 1); return d.toISOString(); }   // напоминание за час до начала (если есть время)
-  async function updateTaskDateTime(id, date, time, notify) { const remind_at = computeRemindAt(date, time, notify); await Store.updateTask(id, { due_date: date || null, due_time: time || null, notify, remind_at, notified: false }); }
+  async function updateTaskDateTime(id, date, time, endTime, notify) { const remind_at = computeRemindAt(date, time, notify); await Store.updateTask(id, { due_date: date || null, due_time: time || null, end_time: endTime || null, notify, remind_at, notified: false }); }
+  // Прибавить минуты к "ЧЧ:ММ" (с ограничением 23:59). Пусто → "".
+  function timeAddMin(hhmm, n) { if (!hhmm) return ""; const p = String(hhmm).split(":"); let m = (+p[0]) * 60 + (+p[1]); if (isNaN(m)) return ""; m = Math.min(23 * 60 + 59, m + n); return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; }
+  // Дефолтное время окончания = начало + 15 минут.
+  function defaultEndTime(start) { return timeAddMin(start, 15); }
+  // Надёжно открыть нативный пикер (iOS/Android/десктоп): showPicker → фолбэк focus+click.
+  function openTimePicker(input) { if (!input) return; try { if (typeof input.showPicker === "function") { input.showPicker(); return; } } catch (e) {} try { input.focus({ preventScroll: true }); } catch (e) {} try { input.click(); } catch (e) {} }
+  // Клик по всей плашке времени (кроме корзины) открывает пикер.
+  function wireTimeBox(input) { if (!input) return; const box = input.closest(".meta-timebox--time"); if (!box || box._twired) return; box._twired = true; box.addEventListener("click", (e) => { if (e.target.closest(".meta-time-clear")) return; openTimePicker(input); }); }
 
   /* фильтры-кнопки */
   $("#date-filter").addEventListener("click", () => openCalendar({ value: dateFilter, allowAll: true, onPick: (v) => { dateFilter = v; applyFiltersUI(); saveFilters(); renderTasks(); } }));
@@ -1186,10 +1213,11 @@
   async function saveTaskDraft() { if (editingTaskId) await Store.updateTask(editingTaskId, taskFields()); }
   const saveTaskDebounced = debounce(saveTaskDraft, 400);
   $("#t-date").addEventListener("click", () => openCalendar({ value: cardDate, allowAll: true, clearLabel: "очистить дату", onPick: (v) => { cardDate = v; taskTouched = true; renderCardMeta(); saveTaskDraft(); } }));
-  $("#t-time").addEventListener("input", (e) => { cardTime = e.target.value; $("#t-time-label").textContent = cardTime || "--:--"; $("#t-time-label").classList.toggle("empty", !cardTime); taskTouched = true; saveTaskDraft(); });
+  $("#t-time").addEventListener("input", (e) => { cardTime = e.target.value; if (cardTime && !cardEndTime) { cardEndTime = defaultEndTime(cardTime); $("#t-end-time").value = cardEndTime; } $("#t-time-label").textContent = cardTime || "--:--"; $("#t-time-label").classList.toggle("empty", !cardTime); $("#t-end-label").textContent = cardEndTime || "--:--"; $("#t-end-label").classList.toggle("empty", !cardEndTime); taskTouched = true; saveTaskDraft(); });
   $("#t-time-clear").addEventListener("click", () => { cardTime = ""; $("#t-time").value = ""; $("#t-time-label").textContent = "--:--"; $("#t-time-label").classList.add("empty"); taskTouched = true; saveTaskDraft(); });
   $("#t-end-time").addEventListener("input", (e) => { cardEndTime = e.target.value; $("#t-end-label").textContent = cardEndTime || "--:--"; $("#t-end-label").classList.toggle("empty", !cardEndTime); taskTouched = true; saveTaskDraft(); });
   $("#t-end-clear").addEventListener("click", () => { cardEndTime = ""; $("#t-end-time").value = ""; $("#t-end-label").textContent = "--:--"; $("#t-end-label").classList.add("empty"); taskTouched = true; saveTaskDraft(); });
+  wireTimeBox($("#t-time")); wireTimeBox($("#t-end-time"));
   $("#t-notify").addEventListener("click", () => { cardNotify = !cardNotify; taskTouched = true; renderCardMeta(); saveTaskDraft(); });
   $("#t-status").addEventListener("click", () => openStatusPicker("task", cardStatus, (k) => { cardStatus = k; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
   $("#t-project").addEventListener("click", () => openProjectPicker(cardProjectId, (id) => { cardProjectId = id; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
