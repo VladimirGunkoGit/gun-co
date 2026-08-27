@@ -161,10 +161,10 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 
 /* ==== Вид задач: МЕСЯЦ ==== */
 .task-month{ flex:1; min-height:0; display:flex; flex-direction:column; overflow-y:auto; }
-.cal-head{ display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:40px; flex:none; }   /* отступ до календаря ×4 */
+#task-month .cal-head{ display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:40px; flex:none; }   /* месяц: две строки, отступ до календаря ×4 (модалки-календари НЕ трогаем) */
 .cal-nav-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; }
 .cal-nav{ flex:none; background:transparent; border:none; color:var(--fg); font-size:22px; line-height:1; cursor:pointer; padding:2px 6px; }
-.cal-head .cal-title{ flex:1; min-width:0; text-align:center; font-family:var(--font-title); font-weight:500; font-size:15px; text-transform:lowercase; letter-spacing:.01em; }   /* = размер шрифта кнопок «Готово» */
+#tm-title{ flex:1; min-width:0; text-align:center; font-family:var(--font-title); font-weight:500; font-size:15px; text-transform:lowercase; letter-spacing:.01em; }   /* = размер шрифта кнопок «Готово» */
 .cal-today{ flex:none; background:var(--inactive-bg); border:none; color:var(--fg); font-size:12px; text-transform:lowercase; border-radius:999px; padding:6px 14px; cursor:pointer; }
 .tm-wds{ display:grid; grid-template-columns:repeat(7,1fr); gap:2px; margin-bottom:4px; }
 .tm-wd{ font-size:10px; color:var(--muted); text-align:center; letter-spacing:.06em; }
@@ -361,7 +361,10 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .taskcard-meta .proj-emoji{ font-size:15px; }
 .status-slot{ background:transparent; border:none; padding:0; cursor:pointer; }
 .meta-timebox{ display:inline-flex; align-items:center; gap:1px; background:var(--inactive-bg); border-radius:5px; padding:6px 6px 6px 12px; }
-.meta-time{ -webkit-appearance:none; appearance:none; width:auto; min-width:0; border:none; background:transparent; padding:0; font-family:var(--font-body); font-size:14px; color:var(--text-soft); outline:none; }
+.meta-timebox--time{ position:relative; }
+.meta-time-label{ font-family:var(--font-body); font-size:14px; color:var(--text-soft); min-width:42px; pointer-events:none; }
+.meta-time-input{ position:absolute; inset:0; width:100%; height:100%; margin:0; padding:0; border:none; background:transparent; opacity:0; cursor:pointer; -webkit-appearance:none; appearance:none; font-size:14px; color:var(--text-soft); }
+.meta-timebox--time .meta-time-clear{ position:relative; z-index:2; }
 .meta-time-clear{ flex:none; border:none; background:transparent; color:var(--muted); display:inline-flex; align-items:center; justify-content:center; padding:0 2px; cursor:pointer; }
 .meta-time-clear:active{ opacity:.5; }
 .meta-bell{ padding:6px 9px; color:var(--text-soft); }
@@ -421,7 +424,7 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .meta-trash{ flex:none; border:none; background:transparent; color:var(--muted); display:inline-flex; align-items:center; justify-content:center; padding:6px 2px; cursor:pointer; }
 .meta-trash:active{ opacity:.5; }
 /* Убираем нативную иконку-часы у полей времени — редактируем тапом/клавиатурой */
-.time-input::-webkit-calendar-picker-indicator, .meta-time::-webkit-calendar-picker-indicator{ display:none; }
+.time-input::-webkit-calendar-picker-indicator, .meta-time-input::-webkit-calendar-picker-indicator{ display:none; }
 .cal-weekdays{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; color:var(--muted); font-size:11px; text-align:center; }
 .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
 .cal-day{ aspect-ratio:1; border:none; background:transparent; color:var(--fg); border-radius:50%; font-size:var(--fs-body); display:flex; align-items:center; justify-content:center; }

@@ -1155,8 +1155,8 @@
   let cardEndTime = "";   // дата окончания всегда = дате начала; отдельно только время окончания
   function renderCardMeta() {
     $("#t-date").textContent = cardDate ? fmtFull(cardDate) : "дата";
-    $("#t-time").value = cardTime || "";
-    $("#t-end-time").value = cardEndTime || "";
+    $("#t-time").value = cardTime || ""; $("#t-time-label").textContent = cardTime || "--:--"; $("#t-time-label").classList.toggle("empty", !cardTime);
+    $("#t-end-time").value = cardEndTime || ""; $("#t-end-label").textContent = cardEndTime || "--:--"; $("#t-end-label").classList.toggle("empty", !cardEndTime);
     $("#t-notify").innerHTML = cardNotify ? BELL_ON : BELL_OFF; $("#t-notify").classList.toggle("off", !cardNotify);
     $("#t-status").innerHTML = statusPill("task", cardStatus);
     const p = projById(cardProjectId);
@@ -1169,10 +1169,10 @@
   async function saveTaskDraft() { if (editingTaskId) await Store.updateTask(editingTaskId, taskFields()); }
   const saveTaskDebounced = debounce(saveTaskDraft, 400);
   $("#t-date").addEventListener("click", () => openCalendar({ value: cardDate, allowAll: true, clearLabel: "очистить дату", onPick: (v) => { cardDate = v; taskTouched = true; renderCardMeta(); saveTaskDraft(); } }));
-  $("#t-time").addEventListener("input", (e) => { cardTime = e.target.value; taskTouched = true; saveTaskDraft(); });
-  $("#t-time-clear").addEventListener("click", () => { cardTime = ""; $("#t-time").value = ""; taskTouched = true; saveTaskDraft(); });
-  $("#t-end-time").addEventListener("input", (e) => { cardEndTime = e.target.value; taskTouched = true; saveTaskDraft(); });
-  $("#t-end-clear").addEventListener("click", () => { cardEndTime = ""; $("#t-end-time").value = ""; taskTouched = true; saveTaskDraft(); });
+  $("#t-time").addEventListener("input", (e) => { cardTime = e.target.value; $("#t-time-label").textContent = cardTime || "--:--"; $("#t-time-label").classList.toggle("empty", !cardTime); taskTouched = true; saveTaskDraft(); });
+  $("#t-time-clear").addEventListener("click", () => { cardTime = ""; $("#t-time").value = ""; $("#t-time-label").textContent = "--:--"; $("#t-time-label").classList.add("empty"); taskTouched = true; saveTaskDraft(); });
+  $("#t-end-time").addEventListener("input", (e) => { cardEndTime = e.target.value; $("#t-end-label").textContent = cardEndTime || "--:--"; $("#t-end-label").classList.toggle("empty", !cardEndTime); taskTouched = true; saveTaskDraft(); });
+  $("#t-end-clear").addEventListener("click", () => { cardEndTime = ""; $("#t-end-time").value = ""; $("#t-end-label").textContent = "--:--"; $("#t-end-label").classList.add("empty"); taskTouched = true; saveTaskDraft(); });
   $("#t-notify").addEventListener("click", () => { cardNotify = !cardNotify; taskTouched = true; renderCardMeta(); saveTaskDraft(); });
   $("#t-status").addEventListener("click", () => openStatusPicker("task", cardStatus, (k) => { cardStatus = k; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
   $("#t-project").addEventListener("click", () => openProjectPicker(cardProjectId, (id) => { cardProjectId = id; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));

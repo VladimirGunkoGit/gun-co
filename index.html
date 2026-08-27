@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css?v=97" />
 </head>
 <body>
 
@@ -124,12 +124,14 @@
         </div>
         <div class="taskcard-meta taskcard-meta--datetime">
           <button id="t-date" class="meta-pill" type="button"></button>
-          <div class="meta-timebox">
-            <input id="t-time" class="meta-time" type="time" step="60" aria-label="время начала" />
+          <div class="meta-timebox meta-timebox--time">
+            <span id="t-time-label" class="meta-time-label">--:--</span>
+            <input id="t-time" class="meta-time-input" type="time" step="60" aria-label="время начала" />
             <button id="t-time-clear" class="meta-time-clear" type="button" aria-label="Очистить время начала"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></svg></button>
           </div>
-          <div class="meta-timebox">
-            <input id="t-end-time" class="meta-time" type="time" step="60" aria-label="время окончания" />
+          <div class="meta-timebox meta-timebox--time">
+            <span id="t-end-label" class="meta-time-label">--:--</span>
+            <input id="t-end-time" class="meta-time-input" type="time" step="60" aria-label="время окончания" />
             <button id="t-end-clear" class="meta-time-clear" type="button" aria-label="Очистить время окончания"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></svg></button>
           </div>
           <button id="t-notify" class="meta-pill meta-bell" type="button" aria-label="напомнить за час до начала"></button>
@@ -503,6 +505,6 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js"></script>
+<script src="app.js?v=97"></script>
 </body>
 </html>
