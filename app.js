@@ -536,11 +536,9 @@
 
   /* ---------- Дата+время+уведомление (большое окно, для главной) ---------- */
   const dt = { y: 0, m: 0, date: "", time: "", endTime: "", notify: true, onDone: null };
-  function dtSetTimeLabel(id, val) { const el = $(id); el.textContent = val || "--:--"; el.classList.toggle("empty", !val); }
-  function dtRenderTime() { dtSetTimeLabel("#dt-time-label", $("#dt-time").value); dtSetTimeLabel("#dt-end-label", $("#dt-end-time").value); }
   function openDateTime({ date, time, endTime, notify, onDone }) {
     const base = (date || todayStr()).split("-"); dt.y = +base[0]; dt.m = +base[1] - 1; dt.date = date || ""; dt.time = time || ""; dt.endTime = endTime || ""; dt.notify = notify !== false; dt.onDone = onDone;
-    $("#dt-time").value = dt.time; $("#dt-end-time").value = dt.endTime; dtRenderTime();
+    $("#dt-time").value = dt.time; $("#dt-end-time").value = dt.endTime;
     $("#dt-notify").classList.toggle("off", !dt.notify); drawDtCal(); $("#datetime-modal").hidden = false;
   }
   function drawDtCal() { drawCal({ y: dt.y, m: dt.m, value: dt.date }, $("#dt-grid"), $("#dt-title"), (d) => { dt.date = d; drawDtCal(); }); }
@@ -553,11 +551,9 @@
   $("#dt-done").addEventListener("click", () => { $("#datetime-modal").hidden = true; if (dt.onDone) dt.onDone(dt.date, $("#dt-time").value, $("#dt-end-time").value, !$("#dt-notify").classList.contains("off")); });
   $("#dt-cal-clear").addEventListener("click", () => { dt.date = ""; drawDtCal(); });
   // Ввод времени начала: обновить подпись; если конец пуст — по дефолту начало + 15 мин.
-  $("#dt-time").addEventListener("input", () => { if ($("#dt-time").value && !$("#dt-end-time").value) $("#dt-end-time").value = defaultEndTime($("#dt-time").value); dtRenderTime(); });
-  $("#dt-end-time").addEventListener("input", () => dtRenderTime());
-  $("#dt-time-clear").addEventListener("click", () => { $("#dt-time").value = ""; dtRenderTime(); });
-  $("#dt-end-clear").addEventListener("click", () => { $("#dt-end-time").value = ""; dtRenderTime(); });
-  wireTimeBox($("#dt-time")); wireTimeBox($("#dt-end-time"));
+  $("#dt-time").addEventListener("change", () => { if ($("#dt-time").value && !$("#dt-end-time").value) $("#dt-end-time").value = defaultEndTime($("#dt-time").value); });
+  $("#dt-time-clear").addEventListener("click", () => { $("#dt-time").value = ""; });
+  $("#dt-end-clear").addEventListener("click", () => { $("#dt-end-time").value = ""; });
 
   /* ---------- Статус: пикер (одиночный) + создание/удаление кастомных ---------- */
   function statusAddBtn() { return `<button type="button" class="status-add" aria-label="Новый статус"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 6.5v11M6.5 12h11"/></svg></button>`; }
@@ -982,6 +978,9 @@
     list.forEach((t) => { const s = statusOf(t); if (!statusIsDone("task", s)) counts[s] = (counts[s] || 0) + 1; });
     return statusSet("task").filter((s) => !s.done && counts[s.id]).map((s) => ({ c: s.c, count: counts[s.id] }));
   }
+  // Закреплённая под датой мини-карточка задачи без времени (вид как у 15-минутных карточек: только заголовок)
+  function weekPinHTML(t) { return `<div class="week-pin" data-id="${t.id}" style="--c:${statusColor("task", statusOf(t))}"><span class="week-ev-title">${esc(t.title)}</span></div>`; }
+  function wireWeekPins(root) { $$(`${root} .week-pin`).forEach((el) => el.addEventListener("click", () => { const t = tasksById[el.dataset.id]; if (t) openTaskEdit(t, "tasks"); })); }
 
   function renderMonthView(tasks) {
     if (tmY == null) { const n = new Date(); tmY = n.getFullYear(); tmM = n.getMonth(); }
@@ -1043,10 +1042,10 @@
     htrack.innerHTML = days.map((d) => {
       const ds = isoDate(d); const wknd = isWeekend(d);
       const tl = (byDay[ds] || []).filter((t) => taskStartMin(t) == null);
-      const badges = tl.length ? `<button class="week-hbadges" type="button" data-d="${ds}">${statusBadgesFor(tl).map((b) => `<span class="kb-badge" style="--c:${b.c}">${b.count}</span>`).join("")}</button>` : "";
-      return `<div class="week-hcell${ds === today ? " today" : ""}${wknd ? " weekend" : ""}" style="width:${colW}px"><span class="week-hcell-day"><span class="week-wd2${wknd ? " weekend" : ""}">${WEEKDAYS[d.getDay()]}</span><span class="week-dnum2${wknd ? " weekend" : ""}">${d.getDate()}</span></span>${badges}</div>`;
+      const pins = tl.length ? `<div class="week-hpins">${tl.map(weekPinHTML).join("")}</div>` : "";
+      return `<div class="week-hcell${ds === today ? " today" : ""}${wknd ? " weekend" : ""}" style="width:${colW}px"><span class="week-hcell-day"><span class="week-wd2${wknd ? " weekend" : ""}">${WEEKDAYS[d.getDay()]}</span><span class="week-dnum2${wknd ? " weekend" : ""}">${d.getDate()}</span></span>${pins}</div>`;
     }).join("");
-    $$("#tw-headtrack .week-hbadges").forEach((b) => b.addEventListener("click", () => { dateFilter = b.dataset.d; applyFiltersUI(); saveFilters(); setTaskView("list"); }));
+    wireWeekPins("#tw-headtrack");
     applyWeekTransform(false); updateWeekHeader();
     if (!weekScrolled) {
       const showNow = nowIdx >= 0 && (mobile ? (days[twCurIdx] && isoDate(days[twCurIdx]) === today) : (nowIdx >= twCurIdx && nowIdx <= twCurIdx + 6));
@@ -1069,13 +1068,12 @@
     $("#tw-month").textContent = weekMonthText();
     const d = addDays(twBase, twCurIdx); const ds = isoDate(d); const wknd = isWeekend(d);
     $("#tw-daylabel").innerHTML = `<span class="week-wd2${wknd ? " weekend" : ""}">${WEEKDAYS[d.getDay()]}</span><span class="week-dnum2${wknd ? " weekend" : ""}">${d.getDate()}</span>`;
+    // мобильный: закреплённые под датой задачи без времени текущего дня
     const timeless = weekTasksCache.filter((t) => (t.due_date || "").slice(0, 10) === ds && taskStartMin(t) == null);
-    const btn = $("#tw-others");
-    if (timeless.length) { btn.hidden = false; btn.dataset.d = ds; btn.innerHTML = `<span class="week-others-label">Другие задачи</span><span class="kb-badges">${statusBadgesFor(timeless).map((b) => `<span class="kb-badge" style="--c:${b.c}">${b.count}</span>`).join("")}</span>`; }
-    else btn.hidden = true;
+    $("#tw-daypins").innerHTML = timeless.map(weekPinHTML).join("");
+    wireWeekPins("#tw-daypins");
   }
   function pageWeek(delta) { if (!twCtx) return; const step = twCtx.mobile ? 1 : 7; twCurIdx = Math.max(0, Math.min(twCtx.days.length - 1, twCurIdx + delta * step)); applyWeekTransform(true); updateWeekHeader(); }
-  $("#tw-others").addEventListener("click", () => { const ds = $("#tw-others").dataset.d; if (!ds) return; dateFilter = ds; applyFiltersUI(); saveFilters(); setTaskView("list"); });
   // Свайп (моб. по дням, десктоп/ландшафт по неделям) + горизонтальный wheel (трекпад)
   (function () {
     const vp = $("#tw-bodyvp"); let sx = 0, sy = 0, on = false;
@@ -1169,10 +1167,6 @@
   function timeAddMin(hhmm, n) { if (!hhmm) return ""; const p = String(hhmm).split(":"); let m = (+p[0]) * 60 + (+p[1]); if (isNaN(m)) return ""; m = Math.min(23 * 60 + 59, m + n); return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; }
   // Дефолтное время окончания = начало + 15 минут.
   function defaultEndTime(start) { return timeAddMin(start, 15); }
-  // Надёжно открыть нативный пикер (iOS/Android/десктоп): showPicker → фолбэк focus+click.
-  function openTimePicker(input) { if (!input) return; try { if (typeof input.showPicker === "function") { input.showPicker(); return; } } catch (e) {} try { input.focus({ preventScroll: true }); } catch (e) {} try { input.click(); } catch (e) {} }
-  // Клик по всей плашке времени (кроме корзины) открывает пикер.
-  function wireTimeBox(input) { if (!input) return; const box = input.closest(".meta-timebox--time"); if (!box || box._twired) return; box._twired = true; box.addEventListener("click", (e) => { if (e.target.closest(".meta-time-clear")) return; openTimePicker(input); }); }
 
   /* фильтры-кнопки */
   $("#date-filter").addEventListener("click", () => openCalendar({ value: dateFilter, allowAll: true, onPick: (v) => { dateFilter = v; applyFiltersUI(); saveFilters(); renderTasks(); } }));
@@ -1199,8 +1193,8 @@
   let cardEndTime = "";   // дата окончания всегда = дате начала; отдельно только время окончания
   function renderCardMeta() {
     $("#t-date").textContent = cardDate ? fmtFull(cardDate) : "дата";
-    $("#t-time").value = cardTime || ""; $("#t-time-label").textContent = cardTime || "--:--"; $("#t-time-label").classList.toggle("empty", !cardTime);
-    $("#t-end-time").value = cardEndTime || ""; $("#t-end-label").textContent = cardEndTime || "--:--"; $("#t-end-label").classList.toggle("empty", !cardEndTime);
+    $("#t-time").value = cardTime || "";
+    $("#t-end-time").value = cardEndTime || "";
     $("#t-notify").innerHTML = cardNotify ? BELL_ON : BELL_OFF; $("#t-notify").classList.toggle("off", !cardNotify);
     $("#t-status").innerHTML = statusPill("task", cardStatus);
     const p = projById(cardProjectId);
@@ -1213,11 +1207,12 @@
   async function saveTaskDraft() { if (editingTaskId) await Store.updateTask(editingTaskId, taskFields()); }
   const saveTaskDebounced = debounce(saveTaskDraft, 400);
   $("#t-date").addEventListener("click", () => openCalendar({ value: cardDate, allowAll: true, clearLabel: "очистить дату", onPick: (v) => { cardDate = v; taskTouched = true; renderCardMeta(); saveTaskDraft(); } }));
-  $("#t-time").addEventListener("input", (e) => { cardTime = e.target.value; if (cardTime && !cardEndTime) { cardEndTime = defaultEndTime(cardTime); $("#t-end-time").value = cardEndTime; } $("#t-time-label").textContent = cardTime || "--:--"; $("#t-time-label").classList.toggle("empty", !cardTime); $("#t-end-label").textContent = cardEndTime || "--:--"; $("#t-end-label").classList.toggle("empty", !cardEndTime); taskTouched = true; saveTaskDraft(); });
-  $("#t-time-clear").addEventListener("click", () => { cardTime = ""; $("#t-time").value = ""; $("#t-time-label").textContent = "--:--"; $("#t-time-label").classList.add("empty"); taskTouched = true; saveTaskDraft(); });
-  $("#t-end-time").addEventListener("input", (e) => { cardEndTime = e.target.value; $("#t-end-label").textContent = cardEndTime || "--:--"; $("#t-end-label").classList.toggle("empty", !cardEndTime); taskTouched = true; saveTaskDraft(); });
-  $("#t-end-clear").addEventListener("click", () => { cardEndTime = ""; $("#t-end-time").value = ""; $("#t-end-label").textContent = "--:--"; $("#t-end-label").classList.add("empty"); taskTouched = true; saveTaskDraft(); });
-  wireTimeBox($("#t-time")); wireTimeBox($("#t-end-time"));
+  $("#t-time").addEventListener("input", (e) => { cardTime = e.target.value; taskTouched = true; saveTaskDraft(); });
+  // дефолт «конец = начало + 15» ставим по завершении ввода (change), а не на каждый символ — иначе при печати минут срабатывает на промежуточном значении
+  $("#t-time").addEventListener("change", () => { if (cardTime && !cardEndTime) { cardEndTime = defaultEndTime(cardTime); $("#t-end-time").value = cardEndTime; taskTouched = true; saveTaskDraft(); } });
+  $("#t-time-clear").addEventListener("click", () => { cardTime = ""; $("#t-time").value = ""; taskTouched = true; saveTaskDraft(); });
+  $("#t-end-time").addEventListener("input", (e) => { cardEndTime = e.target.value; taskTouched = true; saveTaskDraft(); });
+  $("#t-end-clear").addEventListener("click", () => { cardEndTime = ""; $("#t-end-time").value = ""; taskTouched = true; saveTaskDraft(); });
   $("#t-notify").addEventListener("click", () => { cardNotify = !cardNotify; taskTouched = true; renderCardMeta(); saveTaskDraft(); });
   $("#t-status").addEventListener("click", () => openStatusPicker("task", cardStatus, (k) => { cardStatus = k; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));
   $("#t-project").addEventListener("click", () => openProjectPicker(cardProjectId, (id) => { cardProjectId = id; taskTouched = true; renderCardMeta(); saveTaskDraft(); }));

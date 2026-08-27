@@ -197,11 +197,9 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .week-wd2{ font-family:var(--font-title); font-weight:500; font-size:12px; color:var(--muted); }
 .week-dnum2{ font-family:var(--font-title); font-weight:600; font-size:17px; color:var(--fg); }
 .week-wd2.weekend, .week-dnum2.weekend{ color:rgb(232,155,184); }
-.week-others{ margin-left:auto; display:inline-flex; align-items:center; gap:8px; background:var(--field-bg); color:var(--text-soft); border:none; border-radius:8px; padding:4px 10px; cursor:pointer; font-size:12px; }
-.week-others-label{ white-space:nowrap; }
 /* мобильный: без трека дней (показываем текущий день в баре). десктоп/ландшафт (.tw-wide): вся неделя */
 .week-headwrap{ display:none; }
-.tw-wide .week-daylabel, .tw-wide .week-others{ display:none; }
+.tw-wide .week-daylabel{ display:none; }
 .tw-wide .week-head-top{ justify-content:center; padding:5px 4px 2px; }
 .tw-wide .week-headwrap{ display:flex; align-items:stretch; }
 .week-head-gutter{ width:52px; flex:none; }
@@ -210,8 +208,13 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .week-hcell{ flex:none; display:flex; flex-direction:column; align-items:center; gap:2px; padding:3px 0 5px; border-left:1px solid rgba(128,128,128,.13); }
 .week-hcell-day{ display:flex; align-items:baseline; gap:5px; padding:2px 8px; border-radius:10px; }
 .week-hcell.today .week-hcell-day{ background:var(--inactive-bg); }
-.week-hbadges{ display:inline-flex; gap:3px; background:transparent; border:none; padding:0; cursor:pointer; }
-.week-hcell .kb-badge{ min-width:16px; height:16px; font-size:10px; padding:0 4px; }
+/* Закреплённые под датой задачи без времени — не листаются с календарём, выглядят как мини-карточки */
+.week-daypins{ display:flex; flex-direction:column; gap:4px; padding:2px 6px 6px; max-height:32vh; overflow-y:auto; }
+.week-daypins:empty{ display:none; }
+.tw-wide .week-daypins{ display:none; }
+.week-hpins{ width:100%; display:flex; flex-direction:column; gap:3px; padding:3px 4px 0; box-sizing:border-box; max-height:30vh; overflow-y:auto; }
+.week-pin{ text-align:left; border-radius:6px; padding:4px 7px; cursor:pointer; background:color-mix(in srgb, rgb(var(--c)) 26%, var(--bg)); border-left:2px solid rgb(var(--c)); color:var(--fg); overflow:hidden; }
+.week-pin .week-ev-title{ display:block; }
 /* тело: фикс-гуттер часов слева + вьюпорт с треком дней */
 .week-scroll{ flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; }
 .week-grid2{ display:flex; position:relative; align-items:flex-start; }
@@ -374,14 +377,13 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .taskcard-meta .status-pill, .taskcard-meta .proj-pill{ padding:6px 13px; font-size:14px; }
 .taskcard-meta .proj-emoji{ font-size:15px; }
 .status-slot{ background:transparent; border:none; padding:0; cursor:pointer; }
-.meta-timebox{ display:inline-flex; align-items:center; gap:1px; background:var(--inactive-bg); border-radius:5px; padding:5px 6px 5px 12px; }
-.meta-timebox--time{ position:relative; }
-.meta-time-label{ font-family:var(--font-body); font-size:14px; line-height:20px; color:var(--text-soft); min-width:42px; white-space:nowrap; pointer-events:none; }
-.meta-time-label.empty{ padding:0; color:var(--muted); }
-.meta-time-input{ position:absolute; inset:0; width:100%; height:100%; margin:0; padding:0; border:none; background:transparent; opacity:0; cursor:pointer; -webkit-appearance:none; appearance:none; font-size:14px; color:var(--text-soft); }
-.meta-timebox--time{ cursor:pointer; }
-.meta-timebox--time .meta-time-input{ pointer-events:none; }
-.meta-timebox--time .meta-time-clear{ position:relative; z-index:2; pointer-events:auto; }
+.meta-timebox{ display:inline-flex; align-items:center; gap:2px; background:var(--inactive-bg); border-radius:5px; padding:5px 6px 5px 12px; }
+/* Нативное поле времени: на десктопе печатается с клавиатуры (без выпадающего списка),
+   на сенсорных устройствах тап открывает системный пикер — нативное поведение. */
+.meta-time-input{ border:none; background:transparent; color:var(--text-soft); font-family:var(--font-body); font-size:14px; line-height:20px; height:20px; padding:0; margin:0; cursor:pointer; }
+.meta-time-input:focus{ outline:none; color:var(--fg); }
+.meta-time-input::-webkit-calendar-picker-indicator{ display:none; -webkit-appearance:none; }
+.meta-time-input::-webkit-inner-spin-button, .meta-time-input::-webkit-clear-button{ display:none; -webkit-appearance:none; margin:0; }
 .meta-time-clear{ flex:none; border:none; background:transparent; color:var(--muted); display:inline-flex; align-items:center; justify-content:center; padding:0 2px; cursor:pointer; }
 .meta-time-clear:active{ opacity:.5; }
 .meta-bell{ padding:6px 9px; color:var(--text-soft); }
@@ -441,7 +443,7 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .dt-time-field{ display:flex; flex-direction:column; gap:5px; flex:1; }
 .dt-time-cap{ font-family:var(--font-body); font-size:12px; color:var(--muted); padding-left:2px; }
 .dt-time-field .meta-timebox{ justify-content:space-between; }
-.dt-time-field .meta-time-label{ font-size:16px; }
+.dt-time-field .meta-time-input{ font-size:16px; height:22px; line-height:22px; flex:1; min-width:0; }
 .meta-trash{ flex:none; border:none; background:transparent; color:var(--muted); display:inline-flex; align-items:center; justify-content:center; padding:6px 2px; cursor:pointer; }
 .meta-trash:active{ opacity:.5; }
 /* Убираем нативную иконку-часы у полей времени — редактируем тапом/клавиатурой */
