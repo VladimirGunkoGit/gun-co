@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=97" />
+<link rel="stylesheet" href="styles.css?v=98" />
 </head>
 <body>
 
@@ -99,9 +99,15 @@
         <!-- ВИД: НЕДЕЛЯ (день за днём, свайп; 80% текущий день + 20% peek) -->
         <div id="task-week" class="task-week" hidden>
           <div id="tw-head" class="week-head2">
-            <span id="tw-month" class="week-month"></span>
-            <span id="tw-daylabel" class="week-daylabel"></span>
-            <button id="tw-others" class="week-others" type="button" hidden></button>
+            <div class="week-head-top">
+              <span id="tw-month" class="week-month"></span>
+              <span id="tw-daylabel" class="week-daylabel"></span>
+              <button id="tw-others" class="week-others" type="button" hidden></button>
+            </div>
+            <div id="tw-headwrap" class="week-headwrap">
+              <div class="week-head-gutter"></div>
+              <div id="tw-headvp" class="week-headvp"><div id="tw-headtrack" class="week-headtrack"></div></div>
+            </div>
           </div>
           <div id="tw-scroll" class="week-scroll scroll">
             <div id="tw-grid" class="week-grid2">
@@ -505,6 +511,6 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=97"></script>
+<script src="app.js?v=98"></script>
 </body>
 </html>

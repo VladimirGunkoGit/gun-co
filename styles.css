@@ -190,7 +190,8 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 /* ==== Вид задач: НЕДЕЛЯ (расписание) — минимализм ==== */
 .task-week{ flex:1; min-height:0; display:flex; flex-direction:column; }
 /* компактная непрозрачная шапка: месяц слева + текущий день + «Другие задачи» */
-.week-head2{ flex:none; display:flex; align-items:center; gap:10px; padding:5px 4px; background:var(--bg); border-bottom:1px solid rgba(128,128,128,.18); }
+.week-head2{ flex:none; background:var(--bg); border-bottom:1px solid rgba(128,128,128,.18); }
+.week-head-top{ display:flex; align-items:center; gap:10px; padding:5px 4px; }
 .week-month{ flex:none; font-family:var(--font-title); font-weight:500; font-size:15px; text-transform:lowercase; color:var(--text-soft); }   /* = размер кнопки «Готово» */
 .week-daylabel{ flex:none; display:flex; align-items:baseline; gap:6px; }
 .week-wd2{ font-family:var(--font-title); font-weight:500; font-size:12px; color:var(--muted); }
@@ -198,6 +199,19 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .week-wd2.weekend, .week-dnum2.weekend{ color:rgb(232,155,184); }
 .week-others{ margin-left:auto; display:inline-flex; align-items:center; gap:8px; background:var(--field-bg); color:var(--text-soft); border:none; border-radius:8px; padding:4px 10px; cursor:pointer; font-size:12px; }
 .week-others-label{ white-space:nowrap; }
+/* мобильный: без трека дней (показываем текущий день в баре). десктоп/ландшафт (.tw-wide): вся неделя */
+.week-headwrap{ display:none; }
+.tw-wide .week-daylabel, .tw-wide .week-others{ display:none; }
+.tw-wide .week-head-top{ justify-content:center; padding:5px 4px 2px; }
+.tw-wide .week-headwrap{ display:flex; align-items:stretch; }
+.week-head-gutter{ width:52px; flex:none; }
+.week-headvp{ flex:1; min-width:0; overflow:hidden; }
+.week-headtrack{ display:flex; will-change:transform; }
+.week-hcell{ flex:none; display:flex; flex-direction:column; align-items:center; gap:2px; padding:3px 0 5px; border-left:1px solid rgba(128,128,128,.13); }
+.week-hcell-day{ display:flex; align-items:baseline; gap:5px; padding:2px 8px; border-radius:10px; }
+.week-hcell.today .week-hcell-day{ background:var(--inactive-bg); }
+.week-hbadges{ display:inline-flex; gap:3px; background:transparent; border:none; padding:0; cursor:pointer; }
+.week-hcell .kb-badge{ min-width:16px; height:16px; font-size:10px; padding:0 4px; }
 /* тело: фикс-гуттер часов слева + вьюпорт с треком дней */
 .week-scroll{ flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; }
 .week-grid2{ display:flex; position:relative; align-items:flex-start; }
@@ -360,9 +374,10 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .taskcard-meta .status-pill, .taskcard-meta .proj-pill{ padding:6px 13px; font-size:14px; }
 .taskcard-meta .proj-emoji{ font-size:15px; }
 .status-slot{ background:transparent; border:none; padding:0; cursor:pointer; }
-.meta-timebox{ display:inline-flex; align-items:center; gap:1px; background:var(--inactive-bg); border-radius:5px; padding:6px 6px 6px 12px; }
+.meta-timebox{ display:inline-flex; align-items:center; gap:1px; background:var(--inactive-bg); border-radius:5px; padding:5px 6px 5px 12px; }
 .meta-timebox--time{ position:relative; }
-.meta-time-label{ font-family:var(--font-body); font-size:14px; color:var(--text-soft); min-width:42px; pointer-events:none; }
+.meta-time-label{ font-family:var(--font-body); font-size:14px; line-height:20px; color:var(--text-soft); min-width:42px; white-space:nowrap; pointer-events:none; }
+.meta-time-label.empty{ padding:0; color:var(--muted); }
 .meta-time-input{ position:absolute; inset:0; width:100%; height:100%; margin:0; padding:0; border:none; background:transparent; opacity:0; cursor:pointer; -webkit-appearance:none; appearance:none; font-size:14px; color:var(--text-soft); }
 .meta-timebox--time .meta-time-clear{ position:relative; z-index:2; }
 .meta-time-clear{ flex:none; border:none; background:transparent; color:var(--muted); display:inline-flex; align-items:center; justify-content:center; padding:0 2px; cursor:pointer; }
@@ -469,9 +484,4 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 /* Десктоп/планшеты — меню выравнивается по левому краю */
 @media (min-width:768px){ #page-nav{ justify-content:flex-start; } }
 
-/* Комп-версия: весь интерфейс в 90% (эквивалент браузерных 90%) */
-@media (min-width:1000px){
-  html{ zoom:0.9; overflow:hidden; }
-  .auth, .app{ height:calc(100vh / 0.9); height:calc(100dvh / 0.9); }
-}
 

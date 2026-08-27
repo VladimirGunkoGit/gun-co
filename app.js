@@ -982,20 +982,22 @@
     $$("#tm-grid .tm-day[data-d]").forEach((b) => b.addEventListener("click", () => openWeekAt(b.dataset.d)));
   }
 
-  let twCtx = null;   // { colW, hh, days:[ISO] }
+  let twCtx = null;   // { colW, hh, days:[ISO], mobile }
   function renderWeekView(tasks) {
     weekTasksCache = tasks;
     if (!twBase) twBase = addDays(new Date(), -TW_PAST);
     if (twCurIdx == null) twCurIdx = TW_PAST;
-    const days = Array.from({ length: twRange }, (_, i) => addDays(twBase, i)); const today = todayStr();
+    const today = todayStr();
     const scrollEl = $("#tw-scroll");
     const vpW = $("#tw-bodyvp").clientWidth || (window.innerWidth - 52);
-    const mobile = window.innerWidth < 768;
-    const colW = Math.round(vpW * 0.8);   // текущий день 80% + peek следующего 20%
+    const mobile = window.innerWidth < 768, wide = !mobile;
+    $("#task-week").classList.toggle("tw-wide", wide);
+    if (wide) { const cur = addDays(twBase, twCurIdx); twCurIdx = Math.max(0, twCurIdx - ((cur.getDay() + 6) % 7)); }   // десктоп: выравниваем на понедельник
+    const days = Array.from({ length: twRange }, (_, i) => addDays(twBase, i));
+    const colW = wide ? Math.floor(vpW / 7) : Math.round(vpW * 0.8);   // десктоп: вся неделя на экран; моб.: 80% день + 20% peek
     const schedH = scrollEl.clientHeight || 480;
-    const hh = mobile ? Math.round(Math.max(40, schedH / 11) * 2.25) : Math.round(Math.max(40, schedH / 11) * 1.5);   // моб. крупнее: 30 мин = прежние 45 мин
-    twCtx = { colW, hh, days: days.map(isoDate) };
-    // гуттер часов — фикс слева, всегда виден
+    const hh = mobile ? Math.round(Math.max(40, schedH / 11) * 2.25) : Math.round(Math.max(40, schedH / 11) * 1.5);
+    twCtx = { colW, hh, days: days.map(isoDate), mobile };
     $("#tw-gutter").style.height = (24 * hh) + "px";
     $("#tw-gutter").innerHTML = Array.from({ length: 24 }, (_, h) => `<span class="week-hour" style="top:${h * hh}px">${pad(h)}:00</span>`).join("");
     const byDay = tasksByDay(tasks);
@@ -1017,37 +1019,52 @@
     track.style.width = (colW * days.length) + "px"; track.style.height = (24 * hh) + "px";
     track.innerHTML = `<div class="week-colsbg2">${colsBg}</div>${nowHTML}<div class="week-events2">${cardsHTML}</div>`;
     $$("#tw-bodytrack .week-ev").forEach((el) => attachEventInteract(el));
+    // шапка-трек с днями (для десктопа — вся неделя; на моб. скрыт CSS)
+    const htrack = $("#tw-headtrack"); htrack.style.width = (colW * days.length) + "px";
+    htrack.innerHTML = days.map((d) => {
+      const ds = isoDate(d); const wknd = isWeekend(d);
+      const tl = (byDay[ds] || []).filter((t) => taskStartMin(t) == null);
+      const badges = tl.length ? `<button class="week-hbadges" type="button" data-d="${ds}">${statusBadgesFor(tl).map((b) => `<span class="kb-badge" style="--c:${b.c}">${b.count}</span>`).join("")}</button>` : "";
+      return `<div class="week-hcell${ds === today ? " today" : ""}${wknd ? " weekend" : ""}" style="width:${colW}px"><span class="week-hcell-day"><span class="week-wd2${wknd ? " weekend" : ""}">${WEEKDAYS[d.getDay()]}</span><span class="week-dnum2${wknd ? " weekend" : ""}">${d.getDate()}</span></span>${badges}</div>`;
+    }).join("");
+    $$("#tw-headtrack .week-hbadges").forEach((b) => b.addEventListener("click", () => { dateFilter = b.dataset.d; applyFiltersUI(); saveFilters(); setTaskView("list"); }));
     applyWeekTransform(false); updateWeekHeader();
     if (!weekScrolled) {
-      const curIsToday = days[twCurIdx] && isoDate(days[twCurIdx]) === today;
-      scrollEl.scrollTop = curIsToday ? Math.max(0, nowMinutes() / 60 * hh - schedH / 2) : 9 * hh;
+      const showNow = nowIdx >= 0 && (mobile ? (days[twCurIdx] && isoDate(days[twCurIdx]) === today) : (nowIdx >= twCurIdx && nowIdx <= twCurIdx + 6));
+      scrollEl.scrollTop = showNow ? Math.max(0, nowMinutes() / 60 * hh - schedH / 2) : 9 * hh;
       weekScrolled = true;
     }
   }
   function applyWeekTransform(animate) {
     if (!twCtx) return;
-    const track = $("#tw-bodytrack"); track.style.transition = animate ? "transform .22s ease" : "none";
-    track.style.transform = `translateX(${-twCurIdx * twCtx.colW}px)`;
+    const tx = -twCurIdx * twCtx.colW;
+    [$("#tw-bodytrack"), $("#tw-headtrack")].forEach((tr) => { if (!tr) return; tr.style.transition = animate ? "transform .22s ease" : "none"; tr.style.transform = `translateX(${tx}px)`; });
+  }
+  function weekMonthText() {
+    if (!twCtx) return "";
+    if (twCtx.mobile) { const d = addDays(twBase, twCurIdx); return MONTHS[d.getMonth()].toLowerCase(); }
+    const d1 = addDays(twBase, twCurIdx), d2 = addDays(twBase, twCurIdx + 6);
+    return (d1.getMonth() === d2.getMonth() ? MONTHS[d1.getMonth()] : `${MONTHS[d1.getMonth()]} – ${MONTHS[d2.getMonth()]}`).toLowerCase();
   }
   function updateWeekHeader() {
+    $("#tw-month").textContent = weekMonthText();
     const d = addDays(twBase, twCurIdx); const ds = isoDate(d); const wknd = isWeekend(d);
-    $("#tw-month").textContent = MONTHS[d.getMonth()].toLowerCase();
     $("#tw-daylabel").innerHTML = `<span class="week-wd2${wknd ? " weekend" : ""}">${WEEKDAYS[d.getDay()]}</span><span class="week-dnum2${wknd ? " weekend" : ""}">${d.getDate()}</span>`;
     const timeless = weekTasksCache.filter((t) => (t.due_date || "").slice(0, 10) === ds && taskStartMin(t) == null);
     const btn = $("#tw-others");
     if (timeless.length) { btn.hidden = false; btn.dataset.d = ds; btn.innerHTML = `<span class="week-others-label">Другие задачи</span><span class="kb-badges">${statusBadgesFor(timeless).map((b) => `<span class="kb-badge" style="--c:${b.c}">${b.count}</span>`).join("")}</span>`; }
     else btn.hidden = true;
   }
-  function goDay(delta) { if (!twCtx) return; twCurIdx = Math.max(0, Math.min(twCtx.days.length - 1, twCurIdx + delta)); applyWeekTransform(true); updateWeekHeader(); }
+  function pageWeek(delta) { if (!twCtx) return; const step = twCtx.mobile ? 1 : 7; twCurIdx = Math.max(0, Math.min(twCtx.days.length - 1, twCurIdx + delta * step)); applyWeekTransform(true); updateWeekHeader(); }
   $("#tw-others").addEventListener("click", () => { const ds = $("#tw-others").dataset.d; if (!ds) return; dateFilter = ds; applyFiltersUI(); saveFilters(); setTaskView("list"); });
-  // Свайп по дням (touch) + горизонтальный wheel (трекпад)
+  // Свайп (моб. по дням, десктоп/ландшафт по неделям) + горизонтальный wheel (трекпад)
   (function () {
     const vp = $("#tw-bodyvp"); let sx = 0, sy = 0, on = false;
     vp.addEventListener("touchstart", (e) => { if (e.touches.length !== 1 || e.target.closest(".week-ev")) { on = false; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true });
     vp.addEventListener("touchmove", (e) => { if (!on) return; if (Math.abs(e.touches[0].clientY - sy) > Math.abs(e.touches[0].clientX - sx)) on = false; }, { passive: true });
-    vp.addEventListener("touchend", (e) => { if (!on) return; on = false; const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) goDay(dx < 0 ? 1 : -1); }, { passive: true });
+    vp.addEventListener("touchend", (e) => { if (!on) return; on = false; const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy; if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) pageWeek(dx < 0 ? 1 : -1); }, { passive: true });
     let wlock = 0;
-    vp.addEventListener("wheel", (e) => { if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 18) { e.preventDefault(); const n = Date.now(); if (n - wlock > 380) { wlock = n; goDay(e.deltaX > 0 ? 1 : -1); } } }, { passive: false });
+    vp.addEventListener("wheel", (e) => { if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 18) { e.preventDefault(); const n = Date.now(); if (n - wlock > 380) { wlock = n; pageWeek(e.deltaX > 0 ? 1 : -1); } } }, { passive: false });
   })();
   // Перетаскивание события (перенос) и растягивание нижнего края — с компенсацией desktop-zoom
   function attachEventInteract(el) {
