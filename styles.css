@@ -409,7 +409,7 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 /* FAB — над нижним меню */
 .fab{ position:fixed; right:calc(var(--safe-right) + 20px); bottom:calc(var(--safe-bottom) + 84px); z-index:40; width:58px; height:58px; border-radius:50%; border:none; background:var(--solid-bg); color:var(--solid-fg); font-size:30px; line-height:1; display:flex; align-items:center; justify-content:center; box-shadow:0 10px 26px rgba(0,0,0,.4); transition:opacity .15s; }
 /* Контент списков не заезжает под нижнее меню */
-#view-tasks, #view-projects, #view-notes, #view-finance, #view-habits{ padding-bottom:calc(var(--safe-bottom) + 88px); }
+#view-tasks, #view-projects, #view-notes, #view-finance, #view-habits, #view-food{ padding-bottom:calc(var(--safe-bottom) + 88px); }
 [data-theme="light"] .fab{ box-shadow:0 10px 26px rgba(0,0,0,.22); }
 .fab:active{ opacity:.7; }
 
@@ -493,3 +493,60 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 @media (min-width:768px){ #page-nav{ justify-content:flex-start; } }
 
 
+
+/* ================= КАЛОРИИ ================= */
+.pane--food{ display:flex; flex-direction:column; min-height:0; }
+.food-head{ display:flex; align-items:center; gap:10px; padding:2px 2px 10px; }
+.food-date{ display:flex; align-items:baseline; gap:7px; }
+.food-views{ margin-left:auto; display:inline-flex; gap:6px; }
+.food-view-btn{ flex:none; width:28px; height:28px; padding:0; border:none; border-radius:7px; background:var(--inactive-bg); color:var(--fg); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+.food-view-btn svg{ display:block; opacity:.5; }
+.food-view-btn.is-on{ background:var(--solid-bg); color:var(--solid-fg); }
+.food-view-btn.is-on svg{ opacity:1; }
+
+/* Вид «День» — строки приёмов как категории в «расходах»: без подложек, мелкий шрифт */
+.food-day{ flex:1; min-height:0; display:flex; flex-direction:column; }
+.food-meals{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:2px; padding:2px 0 8px; }
+.food-meal-row{ display:flex; align-items:center; gap:10px; padding:8px 2px; border:none; background:transparent; color:var(--fg); width:100%; text-align:left; cursor:pointer; }
+.food-meal-row:active{ opacity:.6; }
+.food-meal-ico{ flex:none; font-size:16px; line-height:1; }
+.food-meal-name{ font-size:var(--fs-body); }
+.food-meal-sum{ margin-left:auto; font-size:var(--fs-body); color:var(--text-soft); font-variant-numeric:tabular-nums; }
+.food-meal-row--act .food-meal-sum{ color:rgb(126,196,232); }
+
+.food-total{ flex:none; display:flex; align-items:baseline; justify-content:center; gap:7px; padding:12px 0 6px; }
+.food-total-num{ font-family:var(--font-title); font-weight:600; font-size:18px; line-height:1; font-variant-numeric:tabular-nums; }
+.food-total-label{ font-size:14px; color:var(--text-soft); }
+
+/* Вид «Календарь» */
+.food-cal{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
+.food-cal .cal-head{ display:flex; align-items:center; justify-content:space-between; }
+
+/* Подэкран приёма: позиции */
+.food-item-row{ display:flex; align-items:center; gap:12px; padding:10px 2px; cursor:pointer; }
+.food-item-name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.food-item-amt{ flex:none; font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.food-item-kcal{ flex:none; min-width:44px; text-align:right; font-family:var(--font-title); font-weight:600; font-variant-numeric:tabular-nums; }
+.food-item-kcal.is-burn{ color:rgb(126,196,232); }
+
+/* Выбор приёма */
+.foodcat-list{ display:flex; flex-direction:column; gap:6px; }
+.foodcat-item{ display:flex; align-items:center; gap:12px; padding:13px 16px; border:none; border-radius:10px; background:var(--inactive-bg); color:var(--fg); width:100%; text-align:left; font-size:16px; cursor:pointer; }
+.foodcat-item:active{ opacity:.85; }
+.foodcat-item .food-meal-ico{ font-size:20px; }
+
+/* Добавление позиции */
+.foodadd-card{ gap:12px; }
+.foodadd-results{ max-height:38vh; min-height:44px; overflow-y:auto; display:flex; flex-direction:column; }
+.foodadd-item{ display:flex; align-items:center; gap:10px; padding:11px 6px; border:none; border-bottom:1px solid rgba(128,128,128,.12); background:transparent; color:var(--fg); width:100%; text-align:left; cursor:pointer; }
+.foodadd-item:last-child{ border-bottom:none; }
+.foodadd-item:active{ opacity:.6; }
+.foodadd-item-name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:15px; }
+.foodadd-item-kcal{ flex:none; font-size:12px; color:var(--muted); white-space:nowrap; }
+.foodadd-empty{ padding:14px 6px; color:var(--muted); font-size:14px; }
+.foodadd-picked{ display:flex; flex-direction:column; gap:8px; background:var(--inactive-bg); border-radius:10px; padding:12px 14px; }
+.foodadd-picked-name{ font-size:var(--fs-body); }
+.foodadd-amount-row{ display:flex; align-items:center; gap:8px; }
+.foodadd-amount-row .field--amount{ flex:none; width:72px; font-family:var(--font-body); font-weight:400; font-size:var(--fs-body); letter-spacing:normal; }
+.foodadd-unit{ font-size:var(--fs-body); color:var(--text-soft); }
+.foodadd-kcal{ margin-left:auto; font-family:var(--font-body); font-weight:400; font-size:var(--fs-body); color:var(--text-soft); }

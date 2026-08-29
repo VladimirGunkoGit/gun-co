@@ -326,6 +326,7 @@
       d.settings = d.settings || { theme: "dark", count: 5 };
       if (!d.shopV1) { d.shopList = DEFAULT_SHOP_HTML; d.shopV1 = true; }
       d.shopList = d.shopList || "";
+      d.foodLog = d.foodLog || [];
       this.write(d); return d;
     },
   };
@@ -810,23 +811,24 @@
   /* ---------- Навигация ---------- */
   let currentView = "tasks";
   let filtersOpen = false;   // фильтры на странице задач скрыты по умолчанию (не сохраняется между запусками)
-  const PAGE_TITLES = { tasks: "задачи", projects: "проекты", notes: "заметки", finance: "финансы", habits: "привычки" };
+  const PAGE_TITLES = { tasks: "задачи", projects: "проекты", notes: "заметки", finance: "финансы", habits: "привычки", food: "калории" };
   function showView(name) {
     currentView = name;
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
     const isForm = name === "task" || name === "project" || name === "note";
-    const isSub = name === "fincat" || name === "shop";   // под-страница: назад + свой заголовок, без нижнего меню
+    const isSub = name === "fincat" || name === "shop" || name === "foodmeal";   // под-страница: назад + свой заголовок, без нижнего меню
     $("#back-btn").hidden = !(isForm || isSub);
     $("#page-title").hidden = isForm;
     if (name === "fincat") $("#page-title").textContent = finCatViewTitle;
     else if (name === "shop") $("#page-title").textContent = "🛒 список покупок";
+    else if (name === "foodmeal") { const m = mealById(foodMealId); $("#page-title").textContent = m ? (m.icon + " " + m.name) : "приём"; }
     else if (!isForm) $("#page-title").textContent = PAGE_TITLES[name] || "";
     $("#page-title").classList.toggle("wrap", name === "shop");
     $("#filter-toggle").hidden = name !== "tasks";
     $("#task-views").hidden = name !== "tasks";
     if (name === "tasks") $("#task-filters").hidden = !filtersOpen;
     $("#page-nav").hidden = isForm || isSub;
-    $("#fab").hidden = !(name === "tasks" || name === "projects" || name === "notes" || name === "habits" || name === "finance" || name === "fincat");
+    $("#fab").hidden = !(name === "tasks" || name === "projects" || name === "notes" || name === "habits" || name === "finance" || name === "fincat" || name === "food" || name === "foodmeal");
     if (!isForm && !isSub) { let activeItem = null; $$("#page-nav .nav-item").forEach((b) => { const on = b.dataset.view === name; b.classList.toggle("active", on); if (on) activeItem = b; }); if (activeItem) requestAnimationFrame(() => activeItem.scrollIntoView({ inline: "nearest", block: "nearest" })); }
     if (name === "tasks") renderTasks();
     else if (name === "projects") renderKanban();
@@ -836,6 +838,8 @@
     else if (name === "finance") renderFinance();
     else if (name === "fincat") renderFinCatPage();
     else if (name === "shop") renderShop();
+    else if (name === "food") renderFood();
+    else if (name === "foodmeal") renderFoodMeal();
   }
   $$("#page-nav .nav-item").forEach((b) => b.addEventListener("click", () => { if (currentView !== b.dataset.view) showView(b.dataset.view); }));
   $("#filter-toggle").addEventListener("click", () => { filtersOpen = !filtersOpen; $("#task-filters").hidden = !filtersOpen; });
@@ -846,10 +850,11 @@
     if (currentView === "note") { leaveNote(); return; }
     if (currentView === "fincat") { showView("finance"); return; }
     if (currentView === "shop") { saveShop(); showView("finance"); return; }
+    if (currentView === "foodmeal") { showView("food"); return; }
   }
   $("#back-btn").addEventListener("click", goBack);
   $("#brand-home").addEventListener("click", () => showView("tasks"));
-  $("#fab").addEventListener("click", () => { if (currentView === "projects") newProject(); else if (currentView === "notes") newNote(); else if (currentView === "habits") newHabit(); else if (currentView === "finance") openFinTx(); else if (currentView === "fincat") { finCatViewId === "__income__" ? openFinTx({ incomeOnly: true }) : openFinTx({ preCat: finCatViewId }); } else newTask(); });
+  $("#fab").addEventListener("click", () => { if (currentView === "projects") newProject(); else if (currentView === "notes") newNote(); else if (currentView === "habits") newHabit(); else if (currentView === "finance") openFinTx(); else if (currentView === "fincat") { finCatViewId === "__income__" ? openFinTx({ incomeOnly: true }) : openFinTx({ preCat: finCatViewId }); } else if (currentView === "food") openFoodCatChooser(); else if (currentView === "foodmeal") openFoodAdd(foodMealId); else newTask(); });
   (function () { const main = $(".main"); let sx = 0, sy = 0, on = false;
     main.addEventListener("touchstart", (e) => { if (e.touches.length !== 1 || e.target.closest(".swipe-row") || e.target.closest("[contenteditable]")) { on = false; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true });
     main.addEventListener("touchmove", (e) => { if (!on) return; if (Math.abs(e.touches[0].clientY - sy) > Math.abs(e.touches[0].clientX - sx)) on = false; }, { passive: true });
@@ -1603,6 +1608,189 @@
     descLoad($("#shop-body"), DEFAULT_SHOP_HTML); saveShop();
   });
   $("#shop-done").addEventListener("click", () => { saveShop(); showView("finance"); });
+
+  /* ---------- Калории ---------- */
+  const MEALS = [
+    { id: "breakfast", name: "завтрак", icon: "🍳" },
+    { id: "lunch", name: "обед", icon: "🍲" },
+    { id: "dinner", name: "ужин", icon: "🍜" },
+    { id: "other", name: "другое", icon: "🍎" },
+    { id: "activity", name: "активность", icon: "🎾" },
+  ];
+  const mealById = (id) => MEALS.find((m) => m.id === id);
+  // версия ассетов берётся из тега <script src="app.js?v=NN"> — чтобы data-файлы кэшировались синхронно
+  const ASSET_V = (function () { try { const s = [...document.scripts].find((x) => /app\.js/.test(x.src || "")); const m = s && (s.src || "").match(/[?&]v=([^&]+)/); return m ? m[1] : ""; } catch (e) { return ""; } })();
+  let foodDate = todayStr(), foodView = "day", foodMealId = null, foodMealCache = [];
+  let foodDb = null, actDb = null; const foodDbById = {}, actDbById = {};
+  const fcState = { y: new Date().getFullYear(), m: new Date().getMonth() };
+
+  async function loadFoodDb() {
+    if (foodDb && actDb) return;
+    try {
+      const q = ASSET_V ? "?v=" + ASSET_V : "";
+      const [f, a] = await Promise.all([
+        fetch("data/foods.json" + q).then((r) => r.json()),
+        fetch("data/activities.json" + q).then((r) => r.json()),
+      ]);
+      foodDb = (f.items || []).slice(); actDb = (a.items || []).slice();
+      foodDb.forEach((x) => (foodDbById[x.name] = x));
+      actDb.forEach((x) => (actDbById[x.name] = x));
+    } catch (e) { foodDb = foodDb || []; actDb = actDb || []; toast("не удалось загрузить базу продуктов"); }
+  }
+
+  // Store-методы журнала калорий
+  Store.foodLog = async function (date) {
+    if (sb && this.userId) { const { data } = await sb.from("food_log").select("*").eq("user_id", this.userId).eq("date", date); return data || []; }
+    return Local.ensure().foodLog.filter((x) => x.date === date);
+  };
+  Store.addFood = async function (e) {
+    const base = { date: e.date, meal: e.meal, ref_id: e.ref_id, name: e.name, amount: Math.round(e.amount), kcal: Math.round(e.kcal) };
+    if (sb && this.userId) { const { data } = await sb.from("food_log").insert({ ...base, user_id: this.userId }).select().single(); return data; }
+    const d = Local.ensure(); const row = { id: uid(), created_at: new Date().toISOString(), ...base }; d.foodLog.push(row); Local.write(d); return row;
+  };
+  Store.deleteFood = async function (id) {
+    if (sb && this.userId) { await sb.from("food_log").delete().eq("id", id); return; }
+    const d = Local.ensure(); d.foodLog = d.foodLog.filter((x) => x.id !== id); Local.write(d);
+  };
+  Store.restoreFood = function (o) { return this._restore("food_log", "foodLog", o); };
+
+  function foodSearch(q) {
+    q = (q || "").trim().toLowerCase();
+    const db = (foodMealIdForSearch() === "activity" ? actDb : foodDb) || [];
+    if (!q) return db.slice(0, 50);
+    const starts = [], contains = [];
+    db.forEach((it) => {
+      const n = it.name.toLowerCase();
+      if (n.startsWith(q)) starts.push(it);
+      else if (n.includes(q) || (it.aliases || []).some((a) => a.toLowerCase().includes(q))) contains.push(it);
+    });
+    return starts.concat(contains).slice(0, 50);
+  }
+
+  function updateFoodHeader() {
+    const d = new Date(foodDate + "T00:00:00");
+    $("#food-wd").textContent = WEEKDAYS[d.getDay()];
+    $("#food-dn").textContent = d.getDate();
+    $("#food-mon").textContent = MONTHS_GEN[d.getMonth()];
+  }
+  async function renderFood() {
+    await loadFoodDb();
+    updateFoodHeader();
+    $$(".food-view-btn").forEach((b) => b.classList.toggle("is-on", b.dataset.fview === foodView));
+    $("#food-day").hidden = foodView !== "day";
+    $("#food-cal").hidden = foodView !== "cal";
+    if (foodView === "cal") { drawFoodCal(); return; }
+    const log = await Store.foodLog(foodDate);
+    const byMeal = {}; MEALS.forEach((m) => (byMeal[m.id] = []));
+    log.forEach((e) => { (byMeal[e.meal] = byMeal[e.meal] || []).push(e); });
+    $("#food-meals").innerHTML = MEALS.map((m) => {
+      const items = byMeal[m.id] || []; const sum = items.reduce((s, x) => s + (x.kcal || 0), 0);
+      const isAct = m.id === "activity";
+      const sumTxt = !items.length ? "0" : (isAct ? "−" + sum : String(sum));
+      return `<button class="food-meal-row${isAct ? " food-meal-row--act" : ""}" data-meal="${m.id}" type="button">
+        <span class="food-meal-ico">${m.icon}</span>
+        <span class="food-meal-name">${m.name}</span>
+        <span class="food-meal-sum">${sumTxt}</span>
+      </button>`;
+    }).join("");
+    const eaten = MEALS.filter((m) => m.id !== "activity").reduce((s, m) => s + (byMeal[m.id] || []).reduce((a, x) => a + (x.kcal || 0), 0), 0);
+    const burned = (byMeal["activity"] || []).reduce((a, x) => a + (x.kcal || 0), 0);
+    $("#food-total-num").textContent = String(eaten - burned);
+  }
+  $("#food-meals").addEventListener("click", (e) => { const row = e.target.closest(".food-meal-row"); if (!row) return; foodMealId = row.dataset.meal; showView("foodmeal"); });
+  $$(".food-view-btn").forEach((b) => b.addEventListener("click", () => { foodView = b.dataset.fview; if (foodView === "cal") { const d = new Date(foodDate + "T00:00:00"); fcState.y = d.getFullYear(); fcState.m = d.getMonth(); } renderFood(); }));
+
+  function drawFoodCal() { drawCal({ y: fcState.y, m: fcState.m, value: foodDate }, $("#fc-grid"), $("#fc-title"), (d) => { foodDate = d; foodView = "day"; renderFood(); }); }
+  $("#fc-prev").addEventListener("click", () => { fcState.m--; if (fcState.m < 0) { fcState.m = 11; fcState.y--; } drawFoodCal(); });
+  $("#fc-next").addEventListener("click", () => { fcState.m++; if (fcState.m > 11) { fcState.m = 0; fcState.y++; } drawFoodCal(); });
+
+  async function renderFoodMeal() {
+    const m = mealById(foodMealId); if (!m) return;
+    const isAct = m.id === "activity";
+    const log = await Store.foodLog(foodDate);
+    const list = log.filter((e) => e.meal === foodMealId).sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+    foodMealCache = list;
+    $("#foodmeal-empty").hidden = list.length > 0;
+    $("#foodmeal-list").innerHTML = list.map((e) => {
+      const unit = isAct ? "мин" : "г";
+      const kcalTxt = isAct ? "−" + e.kcal : String(e.kcal);
+      return `<div class="fincat-row swipeable" data-id="${e.id}">
+        <div class="swipe-del">${TRASH_SVG}</div>
+        <div class="swipe-row food-item-row"><button class="fincat-del" data-act="del" type="button" aria-label="Удалить">${TRASH_SVG}</button><span class="food-item-name">${esc(e.name)}</span><span class="food-item-amt">${e.amount} ${unit}</span><span class="food-item-kcal${isAct ? " is-burn" : ""}">${kcalTxt}</span></div>
+      </div>`;
+    }).join("");
+    $$("#foodmeal-list .fincat-row").forEach((el) => attachSwipe(el, async () => { const o = foodMealCache.find((x) => x.id === el.dataset.id); await Store.deleteFood(el.dataset.id); if (o) pushUndo("удаление позиции", () => Store.restoreFood(o)); renderFoodMeal(); }));
+  }
+  $("#foodmeal-list").addEventListener("click", async (e) => {
+    if (justSwiped) return;
+    const row = e.target.closest(".fincat-row"); if (!row) return;
+    if (e.target.closest(".fincat-del")) { if (!(await askConfirm("Удалить позицию?"))) return; const o = foodMealCache.find((x) => x.id === row.dataset.id); await Store.deleteFood(row.dataset.id); if (o) pushUndo("удаление позиции", () => Store.restoreFood(o)); renderFoodMeal(); }
+  });
+
+  // Выбор приёма (куда добавить)
+  function openFoodCatChooser() {
+    $("#foodcat-list").innerHTML = MEALS.map((m) => `<button class="foodcat-item" data-meal="${m.id}" type="button"><span class="food-meal-ico">${m.icon}</span><span class="foodcat-item-name">${m.name}</span></button>`).join("");
+    $("#foodcat-modal").hidden = false;
+  }
+  $("#foodcat-list").addEventListener("click", (e) => { const b = e.target.closest(".foodcat-item"); if (!b) return; $("#foodcat-modal").hidden = true; openFoodAdd(b.dataset.meal); });
+  $("#foodcat-modal").addEventListener("click", (e) => { if (e.target.id === "foodcat-modal") $("#foodcat-modal").hidden = true; });
+
+  // Добавление позиции: поиск + количество
+  let addMeal = null, addPicked = null;
+  function foodMealIdForSearch() { return addMeal; }
+  async function openFoodAdd(mealId) {
+    await loadFoodDb();
+    addMeal = mealId; addPicked = null;
+    const isAct = mealId === "activity"; const m = mealById(mealId);
+    $("#foodadd-title").textContent = m ? m.name : "";
+    $("#foodadd-search").value = ""; $("#foodadd-search").placeholder = isAct ? "поиск активности" : "поиск блюда";
+    $("#foodadd-unit").textContent = isAct ? "мин" : "г";
+    $("#foodadd-picked").hidden = true; $("#foodadd-ok").disabled = true;
+    renderFoodResults("");
+    $("#foodadd-modal").hidden = false;
+    setTimeout(() => $("#foodadd-search").focus(), 30);
+  }
+  function renderFoodResults(q) {
+    const isAct = addMeal === "activity";
+    const res = foodSearch(q);
+    $("#foodadd-results").innerHTML = res.length
+      ? res.map((it) => `<button class="foodadd-item" data-name="${esc(it.name)}" type="button"><span class="foodadd-item-name">${esc(it.name)}</span><span class="foodadd-item-kcal">${isAct ? it.kcalMin + " ккал/мин" : it.kcal100 + " ккал"}</span></button>`).join("")
+      : `<div class="foodadd-empty">ничего не найдено</div>`;
+  }
+  $("#foodadd-search").addEventListener("input", (e) => renderFoodResults(e.target.value));
+  $("#foodadd-results").addEventListener("click", (e) => { const b = e.target.closest(".foodadd-item"); if (!b) return; pickFood(b.dataset.name); });
+  function pickFood(name) {
+    const isAct = addMeal === "activity";
+    const it = isAct ? actDbById[name] : foodDbById[name]; if (!it) return;
+    addPicked = it;
+    $("#foodadd-picked-name").textContent = it.name;
+    $("#foodadd-amount").value = isAct ? 30 : 100;
+    $("#foodadd-picked").hidden = false; $("#foodadd-ok").disabled = false;
+    updateAddKcal();
+    setTimeout(() => { const a = $("#foodadd-amount"); a.focus(); a.select(); }, 20);
+  }
+  function addKcalValue() {
+    if (!addPicked) return 0;
+    const amt = Math.max(0, parseInt($("#foodadd-amount").value, 10) || 0);
+    return addMeal === "activity" ? Math.round(addPicked.kcalMin * amt) : Math.round(addPicked.kcal100 * amt / 100);
+  }
+  function updateAddKcal() { $("#foodadd-kcal").textContent = (addMeal === "activity" ? "−" : "") + addKcalValue() + " ккал"; }
+  $("#foodadd-amount").addEventListener("input", updateAddKcal);
+  $("#foodadd-ok").addEventListener("click", async () => {
+    if (!addPicked) return;
+    const amt = Math.max(0, parseInt($("#foodadd-amount").value, 10) || 0);
+    if (amt <= 0) { $("#foodadd-amount").focus(); return; }
+    const kcal = addKcalValue();
+    const row = await Store.addFood({ date: foodDate, meal: addMeal, ref_id: addPicked.name, name: addPicked.name, amount: amt, kcal });
+    if (row) pushUndo("добавление позиции", () => Store.deleteFood(row.id));
+    toast(addPicked.name + " добавлено");
+    addPicked = null; $("#foodadd-picked").hidden = true; $("#foodadd-ok").disabled = true;
+    $("#foodadd-search").value = ""; renderFoodResults(""); $("#foodadd-search").focus();
+    refreshFoodViews();
+  });
+  $("#foodadd-close").addEventListener("click", () => { $("#foodadd-modal").hidden = true; refreshFoodViews(); });
+  $("#foodadd-modal").addEventListener("click", (e) => { if (e.target.id === "foodadd-modal") { $("#foodadd-modal").hidden = true; refreshFoodViews(); } });
+  function refreshFoodViews() { if (currentView === "foodmeal") renderFoodMeal(); else if (currentView === "food") renderFood(); }
 
   /* Окно создания операции */
   let finTxKind = "expense", finTxCatId = null, finTxIncomeOnly = false, finTxEditId = null, finTxEditPrev = null;

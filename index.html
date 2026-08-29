@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=100" />
+<link rel="stylesheet" href="styles.css?v=104" />
 </head>
 <body>
 
@@ -259,11 +259,53 @@
       </div>
     </section>
 
-    <!-- ПРИВЫЧКИ -->
+    <!-- ПРИВЫЧКИ (скрыто из меню, код сохранён для будущего) -->
     <section id="view-habits" class="view" hidden>
       <div class="pane">
         <div id="habit-list" class="habit-list scroll"></div>
         <p id="habits-empty" class="empty" hidden>Пока нет Привычек</p>
+      </div>
+    </section>
+
+    <!-- КАЛОРИИ (день + календарь) -->
+    <section id="view-food" class="view" hidden>
+      <div class="pane pane--food">
+        <div class="food-head">
+          <div class="food-date">
+            <span id="food-wd" class="week-wd2"></span>
+            <span id="food-dn" class="week-dnum2"></span>
+            <span id="food-mon" class="week-month"></span>
+          </div>
+          <div class="food-views">
+            <button class="food-view-btn is-on" data-fview="day" type="button" aria-label="День"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01M9 6h11M9 12h11M9 18h11"/></svg></button>
+            <button class="food-view-btn" data-fview="cal" type="button" aria-label="Календарь"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2.2"/><path d="M3.5 9.5h17M8 3v3.5M16 3v3.5"/></svg></button>
+          </div>
+        </div>
+
+        <!-- ВИД: ДЕНЬ -->
+        <div id="food-day" class="food-day">
+          <div id="food-meals" class="food-meals scroll"></div>
+          <div id="food-total" class="food-total"><span id="food-total-num" class="food-total-num">0</span><span class="food-total-label">калорий</span></div>
+        </div>
+
+        <!-- ВИД: КАЛЕНДАРЬ -->
+        <div id="food-cal" class="food-cal" hidden>
+          <div class="cal-head">
+            <button id="fc-prev" class="cal-nav" type="button" aria-label="Назад">‹</button>
+            <div id="fc-title" class="cal-title"></div>
+            <button id="fc-next" class="cal-nav" type="button" aria-label="Вперёд">›</button>
+          </div>
+          <div class="cal-weekdays"><span>пн</span><span>вт</span><span>ср</span><span>чт</span><span>пт</span><span>сб</span><span>вс</span></div>
+          <div id="fc-grid" class="cal-grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- КАЛОРИИ: список позиций одного приёма -->
+    <section id="view-foodmeal" class="view" hidden>
+      <div class="pane pane--food">
+        <div id="foodmeal-list" class="task-list scroll"></div>
+        <p id="foodmeal-empty" class="empty" hidden>Пусто — добавьте через +</p>
       </div>
     </section>
 
@@ -274,7 +316,7 @@
     <button class="nav-item" data-view="projects" type="button" aria-label="Проекты"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(1.2 1.2) scale(.9)"><path stroke-width="2.667" d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></g><path d="M5.5 15h7"/></svg></span></button>
     <button class="nav-item" data-view="notes" type="button" aria-label="Заметки"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 10h7M8.5 14h4.5"/></svg></span></button>
     <button class="nav-item" data-view="finance" type="button" aria-label="Финансы"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10.5h18"/><circle cx="16.5" cy="14.5" r="1.2" fill="currentColor" stroke="none"/></svg></span></button>
-    <button class="nav-item" data-view="habits" type="button" aria-label="Привычки"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12a7.5 7.5 0 0112.6-5.5l2.2 2"/><path d="M19.5 12a7.5 7.5 0 01-12.6 5.5l-2.2-2"/><path d="M19.2 4.4v4.2h-4.2M4.8 19.6v-4.2h4.2"/></svg></span></button>
+    <button class="nav-item" data-view="food" type="button" aria-label="Калории"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5h13v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M17 10h2.2a2.3 2.3 0 0 1 0 4.6H17"/><path d="M7 3c-.6.8-.6 1.7 0 2.5M11 3c-.6.8-.6 1.7 0 2.5"/></svg></span></button>
   </nav>
 
   <button id="fab" class="fab" type="button" aria-label="Новая задача">+</button>
@@ -451,6 +493,35 @@
   </div>
 </div>
 
+<!-- КАЛОРИИ: выбор приёма пищи (куда добавить) -->
+<div id="foodcat-modal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-title">Куда добавить</div>
+    <div id="foodcat-list" class="foodcat-list"></div>
+  </div>
+</div>
+
+<!-- КАЛОРИИ: добавление позиции (поиск + количество) -->
+<div id="foodadd-modal" class="modal" hidden>
+  <div class="modal-card foodadd-card">
+    <div id="foodadd-title" class="modal-title"></div>
+    <input id="foodadd-search" class="field" type="text" placeholder="поиск" autocomplete="off" aria-label="Поиск" />
+    <div id="foodadd-results" class="foodadd-results scroll"></div>
+    <div id="foodadd-picked" class="foodadd-picked" hidden>
+      <div id="foodadd-picked-name" class="foodadd-picked-name"></div>
+      <div class="foodadd-amount-row">
+        <input id="foodadd-amount" class="field field--amount" type="number" inputmode="numeric" min="1" aria-label="Количество" />
+        <span id="foodadd-unit" class="foodadd-unit">г</span>
+        <span id="foodadd-kcal" class="foodadd-kcal"></span>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button id="foodadd-ok" class="btn btn--solid" type="button" disabled>Добавить</button>
+      <button id="foodadd-close" class="btn" type="button">Готово</button>
+    </div>
+  </div>
+</div>
+
 <!-- Создание категории расхода -->
 <div id="fincat-modal" class="modal" hidden>
   <div class="modal-card">
@@ -521,6 +592,6 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=100"></script>
+<script src="app.js?v=104"></script>
 </body>
 </html>

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "note": "Сожжённые ккал/мин для мужчины 33 года, 75 кг. Формула kcalMin = MET × 3.5 × 75 / 200 ≈ MET × 1.31 (верхняя граница). Источник MET — Compendium of Physical Activities. ref_id = name.",
+  "ref": { "sex": "male", "age": 33, "weightKg": 75 },
+  "items": [
+    { "name": "бег", "kcalMin": 15 },
+    { "name": "быстрая ходьба", "kcalMin": 7 },
+    { "name": "велосипед", "kcalMin": 11 },
+    { "name": "плавание", "kcalMin": 11 },
+    { "name": "йога", "kcalMin": 4 },
+    { "name": "силовая тренировка", "kcalMin": 8 },
+    { "name": "HIIT", "kcalMin": 13 },
+    { "name": "прыжки на скакалке", "kcalMin": 16 },
+    { "name": "эллипсоид", "kcalMin": 7 },
+    { "name": "гребной тренажёр", "kcalMin": 9 },
+    { "name": "бокс", "kcalMin": 12 },
+    { "name": "футбол", "kcalMin": 11 },
+    { "name": "баскетбол", "kcalMin": 9 },
+    { "name": "теннис", "kcalMin": 10 },
+    { "name": "бадминтон", "kcalMin": 7 },
+    { "name": "лыжи", "kcalMin": 9 },
+    { "name": "коньки", "kcalMin": 9 },
+    { "name": "танцы", "kcalMin": 7 },
+    { "name": "пилатес", "kcalMin": 4 },
+    { "name": "растяжка", "kcalMin": 3 },
+    { "name": "кроссфит", "kcalMin": 11 },
+    { "name": "скалолазание", "kcalMin": 11 },
+    { "name": "ролики", "kcalMin": 9 },
+    { "name": "аэробика", "kcalMin": 9 },
+    { "name": "степ-аэробика", "kcalMin": 9 },
+    { "name": "гребля на байдарке", "kcalMin": 7 }
+  ]
+}
