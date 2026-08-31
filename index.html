@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=104" />
+<link rel="stylesheet" href="styles.css?v=108" />
 </head>
 <body>
 
@@ -284,7 +284,8 @@
 
         <!-- ВИД: ДЕНЬ -->
         <div id="food-day" class="food-day">
-          <div id="food-meals" class="food-meals scroll"></div>
+          <div id="food-meals" class="food-meals"></div>
+          <div id="food-recents" class="food-recents scroll"></div>
           <div id="food-total" class="food-total"><span id="food-total-num" class="food-total-num">0</span><span class="food-total-label">калорий</span></div>
         </div>
 
@@ -493,18 +494,10 @@
   </div>
 </div>
 
-<!-- КАЛОРИИ: выбор приёма пищи (куда добавить) -->
-<div id="foodcat-modal" class="modal" hidden>
-  <div class="modal-card">
-    <div class="modal-title">Куда добавить</div>
-    <div id="foodcat-list" class="foodcat-list"></div>
-  </div>
-</div>
-
-<!-- КАЛОРИИ: добавление позиции (поиск + количество) -->
+<!-- КАЛОРИИ: добавление позиции (выбор приёма в шапке + поиск + количество) -->
 <div id="foodadd-modal" class="modal" hidden>
   <div class="modal-card foodadd-card">
-    <div id="foodadd-title" class="modal-title"></div>
+    <div id="foodadd-meals" class="foodadd-meals"></div>
     <input id="foodadd-search" class="field" type="text" placeholder="поиск" autocomplete="off" aria-label="Поиск" />
     <div id="foodadd-results" class="foodadd-results scroll"></div>
     <div id="foodadd-picked" class="foodadd-picked" hidden>
@@ -515,6 +508,7 @@
         <span id="foodadd-kcal" class="foodadd-kcal"></span>
       </div>
     </div>
+    <button id="foodadd-kcal-row" class="foodadd-kcal-row" type="button">добавить калории</button>
     <div class="form-actions">
       <button id="foodadd-ok" class="btn btn--solid" type="button" disabled>Добавить</button>
       <button id="foodadd-close" class="btn" type="button">Готово</button>
@@ -592,6 +586,6 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=104"></script>
+<script src="app.js?v=108"></script>
 </body>
 </html>

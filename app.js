@@ -854,7 +854,7 @@
   }
   $("#back-btn").addEventListener("click", goBack);
   $("#brand-home").addEventListener("click", () => showView("tasks"));
-  $("#fab").addEventListener("click", () => { if (currentView === "projects") newProject(); else if (currentView === "notes") newNote(); else if (currentView === "habits") newHabit(); else if (currentView === "finance") openFinTx(); else if (currentView === "fincat") { finCatViewId === "__income__" ? openFinTx({ incomeOnly: true }) : openFinTx({ preCat: finCatViewId }); } else if (currentView === "food") openFoodCatChooser(); else if (currentView === "foodmeal") openFoodAdd(foodMealId); else newTask(); });
+  $("#fab").addEventListener("click", () => { if (currentView === "projects") newProject(); else if (currentView === "notes") newNote(); else if (currentView === "habits") newHabit(); else if (currentView === "finance") openFinTx(); else if (currentView === "fincat") { finCatViewId === "__income__" ? openFinTx({ incomeOnly: true }) : openFinTx({ preCat: finCatViewId }); } else if (currentView === "food") openFoodAdd("breakfast"); else if (currentView === "foodmeal") openFoodAdd(foodMealId); else newTask(); });
   (function () { const main = $(".main"); let sx = 0, sy = 0, on = false;
     main.addEventListener("touchstart", (e) => { if (e.touches.length !== 1 || e.target.closest(".swipe-row") || e.target.closest("[contenteditable]")) { on = false; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true });
     main.addEventListener("touchmove", (e) => { if (!on) return; if (Math.abs(e.touches[0].clientY - sy) > Math.abs(e.touches[0].clientX - sx)) on = false; }, { passive: true });
@@ -1621,6 +1621,12 @@
   // версия ассетов берётся из тега <script src="app.js?v=NN"> — чтобы data-файлы кэшировались синхронно
   const ASSET_V = (function () { try { const s = [...document.scripts].find((x) => /app\.js/.test(x.src || "")); const m = s && (s.src || "").match(/[?&]v=([^&]+)/); return m ? m[1] : ""; } catch (e) { return ""; } })();
   let foodDate = todayStr(), foodView = "day", foodMealId = null, foodMealCache = [];
+  // Недавно добавленные (свои у каждого пользователя, хранятся локально; продукт + последний вес)
+  const RECENT_MAX = 20;   // TODO: уточнить число позже
+  function recentsKey() { return "gunco_recents_" + (Store.userId || "local"); }
+  function loadRecents() { try { return JSON.parse(localStorage.getItem(recentsKey())) || []; } catch (e) { return []; } }
+  function saveRecents(list) { try { localStorage.setItem(recentsKey(), JSON.stringify(list.slice(0, RECENT_MAX))); } catch (e) {} }
+  function pushRecent(name, amount, meal) { const list = loadRecents().filter((r) => r.name !== name); list.unshift({ name, amount, meal }); saveRecents(list); }
   let foodDb = null, actDb = null; const foodDbById = {}, actDbById = {};
   const fcState = { y: new Date().getFullYear(), m: new Date().getMonth() };
 
@@ -1696,8 +1702,13 @@
     const eaten = MEALS.filter((m) => m.id !== "activity").reduce((s, m) => s + (byMeal[m.id] || []).reduce((a, x) => a + (x.kcal || 0), 0), 0);
     const burned = (byMeal["activity"] || []).reduce((a, x) => a + (x.kcal || 0), 0);
     $("#food-total-num").textContent = String(eaten - burned);
+    // недавно добавленные плашки (продукт + вес, без калорий)
+    $("#food-recents").innerHTML = loadRecents().map((r) =>
+      `<button class="food-recent" data-name="${esc(r.name)}" data-amt="${r.amount}" data-meal="${r.meal || "other"}" type="button"><span class="food-recent-name">${esc(r.name)}</span><span class="food-recent-amt">${r.amount} г</span></button>`
+    ).join("");
   }
   $("#food-meals").addEventListener("click", (e) => { const row = e.target.closest(".food-meal-row"); if (!row) return; foodMealId = row.dataset.meal; showView("foodmeal"); });
+  $("#food-recents").addEventListener("click", (e) => { const b = e.target.closest(".food-recent"); if (!b) return; openFoodAdd(b.dataset.meal || "other", { name: b.dataset.name, amount: +b.dataset.amt }); });
   $$(".food-view-btn").forEach((b) => b.addEventListener("click", () => { foodView = b.dataset.fview; if (foodView === "cal") { const d = new Date(foodDate + "T00:00:00"); fcState.y = d.getFullYear(); fcState.m = d.getMonth(); } renderFood(); }));
 
   function drawFoodCal() { drawCal({ y: fcState.y, m: fcState.m, value: foodDate }, $("#fc-grid"), $("#fc-title"), (d) => { foodDate = d; foodView = "day"; renderFood(); }); }
@@ -1712,11 +1723,13 @@
     foodMealCache = list;
     $("#foodmeal-empty").hidden = list.length > 0;
     $("#foodmeal-list").innerHTML = list.map((e) => {
+      const isKcal = e.ref_id === "__kcal__";
       const unit = isAct ? "мин" : "г";
+      const amtTxt = isKcal ? "" : `${e.amount} ${unit}`;   // прямой ввод калорий — без граммов
       const kcalTxt = isAct ? "−" + e.kcal : String(e.kcal);
       return `<div class="fincat-row swipeable" data-id="${e.id}">
         <div class="swipe-del">${TRASH_SVG}</div>
-        <div class="swipe-row food-item-row"><button class="fincat-del" data-act="del" type="button" aria-label="Удалить">${TRASH_SVG}</button><span class="food-item-name">${esc(e.name)}</span><span class="food-item-amt">${e.amount} ${unit}</span><span class="food-item-kcal${isAct ? " is-burn" : ""}">${kcalTxt}</span></div>
+        <div class="swipe-row food-item-row"><button class="fincat-del" data-act="del" type="button" aria-label="Удалить">${TRASH_SVG}</button><span class="food-item-name">${esc(e.name)}</span><span class="food-item-amt">${amtTxt}</span><span class="food-item-kcal${isAct ? " is-burn" : ""}">${kcalTxt}</span></div>
       </div>`;
     }).join("");
     $$("#foodmeal-list .fincat-row").forEach((el) => attachSwipe(el, async () => { const o = foodMealCache.find((x) => x.id === el.dataset.id); await Store.deleteFood(el.dataset.id); if (o) pushUndo("удаление позиции", () => Store.restoreFood(o)); renderFoodMeal(); }));
@@ -1727,28 +1740,38 @@
     if (e.target.closest(".fincat-del")) { if (!(await askConfirm("Удалить позицию?"))) return; const o = foodMealCache.find((x) => x.id === row.dataset.id); await Store.deleteFood(row.dataset.id); if (o) pushUndo("удаление позиции", () => Store.restoreFood(o)); renderFoodMeal(); }
   });
 
-  // Выбор приёма (куда добавить)
-  function openFoodCatChooser() {
-    $("#foodcat-list").innerHTML = MEALS.map((m) => `<button class="foodcat-item" data-meal="${m.id}" type="button"><span class="food-meal-ico">${m.icon}</span><span class="foodcat-item-name">${m.name}</span></button>`).join("");
-    $("#foodcat-modal").hidden = false;
-  }
-  $("#foodcat-list").addEventListener("click", (e) => { const b = e.target.closest(".foodcat-item"); if (!b) return; $("#foodcat-modal").hidden = true; openFoodAdd(b.dataset.meal); });
-  $("#foodcat-modal").addEventListener("click", (e) => { if (e.target.id === "foodcat-modal") $("#foodcat-modal").hidden = true; });
-
-  // Добавление позиции: поиск + количество
+  // Добавление позиции: приём в шапке + поиск + количество
   let addMeal = null, addPicked = null;
   function foodMealIdForSearch() { return addMeal; }
-  async function openFoodAdd(mealId) {
-    await loadFoodDb();
-    addMeal = mealId; addPicked = null;
-    const isAct = mealId === "activity"; const m = mealById(mealId);
-    $("#foodadd-title").textContent = m ? m.name : "";
-    $("#foodadd-search").value = ""; $("#foodadd-search").placeholder = isAct ? "поиск активности" : "поиск блюда";
+  function renderAddMeals() {
+    $("#foodadd-meals").innerHTML = MEALS.map((m) => `<button class="foodadd-meal${m.id === addMeal ? " is-on" : ""}" data-meal="${m.id}" type="button"><span class="foodadd-meal-ico">${m.icon}</span><span class="foodadd-meal-name">${m.name}</span></button>`).join("");
+  }
+  // Применить меняющиеся под приём элементы окна (единицы, плейсхолдер, строка калорий)
+  function applyAddMeal() {
+    const isAct = addMeal === "activity";
+    $("#foodadd-search").placeholder = isAct ? "поиск активности" : "поиск блюда";
     $("#foodadd-unit").textContent = isAct ? "мин" : "г";
+    $("#foodadd-kcal-row").hidden = isAct;   // прямой ввод калорий — только для приёмов пищи
+    renderAddMeals();
+  }
+  function setAddMeal(mealId) {
+    if (mealId === addMeal) return;
+    addMeal = mealId; addPicked = null;
     $("#foodadd-picked").hidden = true; $("#foodadd-ok").disabled = true;
+    applyAddMeal();
+    renderFoodResults($("#foodadd-search").value);
+  }
+  $("#foodadd-meals").addEventListener("click", (e) => { const b = e.target.closest(".foodadd-meal"); if (!b) return; setAddMeal(b.dataset.meal); });
+  async function openFoodAdd(mealId, preselect) {
+    await loadFoodDb();
+    addMeal = mealId || "breakfast"; addPicked = null;   // по умолчанию — завтрак
+    $("#foodadd-search").value = "";
+    $("#foodadd-picked").hidden = true; $("#foodadd-ok").disabled = true;
+    applyAddMeal();
     renderFoodResults("");
     $("#foodadd-modal").hidden = false;
-    setTimeout(() => $("#foodadd-search").focus(), 30);
+    if (preselect && preselect.name) pickFood(preselect.name, preselect.amount);
+    else setTimeout(() => $("#foodadd-search").focus(), 30);
   }
   function renderFoodResults(q) {
     const isAct = addMeal === "activity";
@@ -1759,30 +1782,48 @@
   }
   $("#foodadd-search").addEventListener("input", (e) => renderFoodResults(e.target.value));
   $("#foodadd-results").addEventListener("click", (e) => { const b = e.target.closest(".foodadd-item"); if (!b) return; pickFood(b.dataset.name); });
-  function pickFood(name) {
+  function pickFood(name, amount) {
     const isAct = addMeal === "activity";
     const it = isAct ? actDbById[name] : foodDbById[name]; if (!it) return;
     addPicked = it;
     $("#foodadd-picked-name").textContent = it.name;
-    $("#foodadd-amount").value = isAct ? 30 : 100;
+    $("#foodadd-unit").textContent = isAct ? "мин" : "г";
+    $("#foodadd-amount").value = amount != null ? amount : (isAct ? 30 : 100);
     $("#foodadd-picked").hidden = false; $("#foodadd-ok").disabled = false;
     updateAddKcal();
     setTimeout(() => { const a = $("#foodadd-amount"); a.focus(); a.select(); }, 20);
   }
+  // Прямой ввод калорий: продукт «Калории», вводится количество калорий (не грамм)
+  function pickKcalDirect() {
+    addPicked = { name: "Калории", direct: true };
+    $("#foodadd-picked-name").textContent = "Калории";
+    $("#foodadd-unit").textContent = "ккал";
+    $("#foodadd-amount").value = 100;
+    $("#foodadd-picked").hidden = false; $("#foodadd-ok").disabled = false;
+    updateAddKcal();
+    setTimeout(() => { const a = $("#foodadd-amount"); a.focus(); a.select(); }, 20);
+  }
+  $("#foodadd-kcal-row").addEventListener("click", () => pickKcalDirect());
   function addKcalValue() {
     if (!addPicked) return 0;
     const amt = Math.max(0, parseInt($("#foodadd-amount").value, 10) || 0);
+    if (addPicked.direct) return amt;
     return addMeal === "activity" ? Math.round(addPicked.kcalMin * amt) : Math.round(addPicked.kcal100 * amt / 100);
   }
-  function updateAddKcal() { $("#foodadd-kcal").textContent = (addMeal === "activity" ? "−" : "") + addKcalValue() + " ккал"; }
+  function updateAddKcal() {
+    if (addPicked && addPicked.direct) { $("#foodadd-kcal").textContent = ""; return; }   // при прямом вводе граммы = калории, предпросмотр не нужен
+    $("#foodadd-kcal").textContent = (addMeal === "activity" ? "−" : "") + addKcalValue() + " ккал";
+  }
   $("#foodadd-amount").addEventListener("input", updateAddKcal);
   $("#foodadd-ok").addEventListener("click", async () => {
     if (!addPicked) return;
     const amt = Math.max(0, parseInt($("#foodadd-amount").value, 10) || 0);
     if (amt <= 0) { $("#foodadd-amount").focus(); return; }
     const kcal = addKcalValue();
-    const row = await Store.addFood({ date: foodDate, meal: addMeal, ref_id: addPicked.name, name: addPicked.name, amount: amt, kcal });
+    const direct = !!addPicked.direct;
+    const row = await Store.addFood({ date: foodDate, meal: addMeal, ref_id: direct ? "__kcal__" : addPicked.name, name: addPicked.name, amount: amt, kcal });
     if (row) pushUndo("добавление позиции", () => Store.deleteFood(row.id));
+    if (!direct && addMeal !== "activity") pushRecent(addPicked.name, amt, addMeal);   // недавние — только реальные продукты
     toast(addPicked.name + " добавлено");
     addPicked = null; $("#foodadd-picked").hidden = true; $("#foodadd-ok").disabled = true;
     $("#foodadd-search").value = ""; renderFoodResults(""); $("#foodadd-search").focus();

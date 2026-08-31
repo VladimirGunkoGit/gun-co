@@ -506,7 +506,14 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 
 /* Вид «День» — строки приёмов как категории в «расходах»: без подложек, мелкий шрифт */
 .food-day{ flex:1; min-height:0; display:flex; flex-direction:column; }
-.food-meals{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:2px; padding:2px 0 8px; }
+.food-meals{ flex:none; display:flex; flex-direction:column; gap:2px; padding:2px 0 2px; }
+/* Недавно добавленные — маленькие плашки (продукт + вес), почти прозрачный фон, скруг. 5px; листаются на малых экранах */
+.food-recents{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-wrap:wrap; align-content:flex-start; gap:6px; padding:8px 0 4px; }
+.food-recent{ display:inline-flex; align-items:center; gap:6px; max-width:100%; border:none; border-radius:5px; background:rgba(255,255,255,.12); color:var(--fg); padding:6px 10px; font-size:13px; cursor:pointer; }
+:root[data-theme="light"] .food-recent{ background:rgba(0,0,0,.06); }
+.food-recent:active{ opacity:.6; }
+.food-recent-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.food-recent-amt{ flex:none; color:var(--muted); }
 .food-meal-row{ display:flex; align-items:center; gap:10px; padding:8px 2px; border:none; background:transparent; color:var(--fg); width:100%; text-align:left; cursor:pointer; }
 .food-meal-row:active{ opacity:.6; }
 .food-meal-ico{ flex:none; font-size:16px; line-height:1; }
@@ -537,6 +544,11 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 
 /* Добавление позиции */
 .foodadd-card{ gap:12px; }
+.foodadd-meals{ display:flex; flex-wrap:wrap; gap:6px; }
+.foodadd-meal{ display:inline-flex; align-items:center; gap:5px; border:none; border-radius:8px; background:var(--inactive-bg); color:var(--text-soft); padding:7px 11px; font-size:13px; cursor:pointer; }
+.foodadd-meal:active{ opacity:.7; }
+.foodadd-meal.is-on{ background:var(--solid-bg); color:var(--solid-fg); }
+.foodadd-meal-ico{ font-size:14px; line-height:1; }
 .foodadd-results{ max-height:38vh; min-height:44px; overflow-y:auto; display:flex; flex-direction:column; }
 .foodadd-item{ display:flex; align-items:center; gap:10px; padding:11px 6px; border:none; border-bottom:1px solid rgba(128,128,128,.12); background:transparent; color:var(--fg); width:100%; text-align:left; cursor:pointer; }
 .foodadd-item:last-child{ border-bottom:none; }
@@ -544,6 +556,8 @@ body.dnd-active{ cursor:grabbing; -webkit-user-select:none; user-select:none; }
 .foodadd-item-name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:15px; }
 .foodadd-item-kcal{ flex:none; font-size:12px; color:var(--muted); white-space:nowrap; }
 .foodadd-empty{ padding:14px 6px; color:var(--muted); font-size:14px; }
+.foodadd-kcal-row{ width:100%; border:none; border-radius:8px; background:rgba(128,128,128,.10); color:var(--text-soft); padding:11px 14px; font-size:14px; text-align:center; cursor:pointer; }
+.foodadd-kcal-row:active{ opacity:.6; }
 .foodadd-picked{ display:flex; flex-direction:column; gap:8px; background:var(--inactive-bg); border-radius:10px; padding:12px 14px; }
 .foodadd-picked-name{ font-size:var(--fs-body); }
 .foodadd-amount-row{ display:flex; align-items:center; gap:8px; }
