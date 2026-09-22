@@ -1,7 +1,32 @@
-/* ================= gunco — логика ================= */
+/* =================================================================
+   gunco — логика приложения (задачи / проекты / заметки / покупки)
+   -----------------------------------------------------------------
+   • FEATURES  — какие разделы показывать. Финансы/Калории/Привычки
+                 скрыты в этом деплое, но код цел — включаются здесь.
+   • PLATFORM  — различаем нативное приложение (Capacitor) и браузер;
+                 на <html> вешаются классы .native / .web.
+   ================================================================= */
 (function () {
   "use strict";
   const CFG = window.GUNCO_CONFIG || {};
+
+  /* ---------- Разделы этого деплоя ---------- */
+  const FEATURES = { finance: false, food: false, habits: false };   // включить в будущих версиях
+
+  /* ---------- Платформа: нативное приложение vs браузер ---------- */
+  const isNative = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform());
+  document.documentElement.classList.toggle("native", isNative);
+  document.documentElement.classList.toggle("web", !isNative);
+  // Нативный статус-бар: прозрачный оверлей + стиль под тему (иначе белая полоса сверху)
+  function applyNativeStatusBar() {
+    if (!isNative) return;
+    const SB = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.StatusBar;
+    if (!SB) return;
+    const dark = document.documentElement.getAttribute("data-theme") !== "light";
+    try { SB.setOverlaysWebView({ overlay: true }); } catch (e) {}
+    try { SB.setStyle({ style: dark ? "LIGHT" : "DARK" }); } catch (e) {}   // LIGHT = светлый текст на тёмном
+  }
+
   const HAS_SUPABASE = !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && window.supabase);
   const sb = HAS_SUPABASE ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, { auth: { detectSessionInUrl: true, flowType: "implicit", persistSession: true, autoRefreshToken: true } }) : null;
 
@@ -297,9 +322,10 @@
   }
   function armShake() {
     if (shakeArmed || typeof DeviceMotionEvent === "undefined") return;
-    if (typeof DeviceMotionEvent.requestPermission === "function") {
-      DeviceMotionEvent.requestPermission().then((s) => { if (s === "granted") { window.addEventListener("devicemotion", onMotion); shakeArmed = true; } }).catch(() => {});
-    } else { window.addEventListener("devicemotion", onMotion); shakeArmed = true; }
+    // НЕ запрашиваем доступ к движению/ориентации (назойливый iOS-диалог «Motion & Orientation»).
+    // Включаем shake-отмену только там, где разрешение не требуется (Android/десктоп).
+    if (typeof DeviceMotionEvent.requestPermission === "function") return;
+    window.addEventListener("devicemotion", onMotion); shakeArmed = true;
   }
   document.addEventListener("click", function armOnce() { armShake(); document.removeEventListener("click", armOnce); }, { once: true });
 
@@ -488,7 +514,7 @@
   };
 
   /* ---------- Тема ---------- */
-  function applyTheme(t) { document.documentElement.setAttribute("data-theme", t); Store.saveSettings({ theme: t }); }
+  function applyTheme(t) { document.documentElement.setAttribute("data-theme", t); Store.saveSettings({ theme: t }); applyNativeStatusBar(); }
   $("#theme-btn").addEventListener("click", () => applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark"));
 
   /* ---------- Подтверждение ---------- */
@@ -811,8 +837,13 @@
   /* ---------- Навигация ---------- */
   let currentView = "tasks";
   let filtersOpen = false;   // фильтры на странице задач скрыты по умолчанию (не сохраняется между запусками)
-  const PAGE_TITLES = { tasks: "задачи", projects: "проекты", notes: "заметки", finance: "финансы", habits: "привычки", food: "калории" };
+  const PAGE_TITLES = { tasks: "задачи", projects: "проекты", notes: "заметки", finance: "финансы", habits: "привычки", food: "калории", ai: "добавить" };
   function showView(name) {
+    if (currentView === "ai" && name !== "ai") aiStopVoice();   // уходим с экрана ИИ — остановить запись
+    // скрытые разделы недоступны из UI в этом деплое — защита от прямого перехода
+    if ((name === "finance" || name === "fincat") && !FEATURES.finance) name = "tasks";
+    if ((name === "food" || name === "foodmeal") && !FEATURES.food) name = "tasks";
+    if (name === "habits" && !FEATURES.habits) name = "tasks";
     currentView = name;
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
     const isForm = name === "task" || name === "project" || name === "note";
@@ -838,6 +869,7 @@
     else if (name === "finance") renderFinance();
     else if (name === "fincat") renderFinCatPage();
     else if (name === "shop") renderShop();
+    else if (name === "ai") { /* без авто-фокуса: клавиатура открывается только по тапу пользователя — страница не улетает вверх */ }
     else if (name === "food") renderFood();
     else if (name === "foodmeal") renderFoodMeal();
   }
@@ -849,7 +881,7 @@
     if (currentView === "project") { leaveProject(); return; }
     if (currentView === "note") { leaveNote(); return; }
     if (currentView === "fincat") { showView("finance"); return; }
-    if (currentView === "shop") { saveShop(); showView("finance"); return; }
+    if (currentView === "shop") { saveShop(); showView("notes"); return; }
     if (currentView === "foodmeal") { showView("food"); return; }
   }
   $("#back-btn").addEventListener("click", goBack);
@@ -941,6 +973,7 @@
   }
   async function renderTasks() {
     await applyDefaultEndTimes();
+    scheduleReminderSync();   // держим локальные напоминания (нативно) в актуальном состоянии
     let tasks = await Store.tasks();
     tasks = tasks.filter((t) => filterStatuses.has(statusOf(t)));
     if (filterProjects.size) tasks = tasks.filter((t) => filterProjects.has(t.project_id));
@@ -1019,7 +1052,7 @@
     const days = Array.from({ length: twRange }, (_, i) => addDays(twBase, i));
     const colW = wide ? Math.floor(vpW / 7) : Math.round(vpW * 0.8);   // десктоп: вся неделя на экран; моб.: 80% день + 20% peek
     const schedH = scrollEl.clientHeight || 480;
-    const hh = mobile ? Math.round(Math.max(40, schedH / 11) * 2.25) : Math.round(Math.max(40, schedH / 11) * 1.5);
+    const hh = Math.round((mobile ? Math.max(40, schedH / 11) * 2.25 : Math.max(40, schedH / 11) * 1.5) * 0.75);   // высота часа = 1.5× от «в 2 раза плотнее» (чтобы влезал заголовок 15-мин задачи)
     twCtx = { colW, hh, days: days.map(isoDate), mobile };
     $("#tw-gutter").style.height = (24 * hh) + "px";
     $("#tw-gutter").innerHTML = Array.from({ length: 24 }, (_, h) => `<span class="week-hour" style="top:${h * hh}px">${pad(h)}:00</span>`).join("");
@@ -1031,7 +1064,7 @@
       layoutDay(list).forEach((ev) => {
         const { t, s, e, col, cols } = ev; const dur = e - s; const top = s / 60 * hh; const height = Math.max(18, dur / 60 * hh);
         const w = colW / cols, left = di * colW + col * w; const p = projById(t.project_id);
-        const mini = dur < 30 ? " week-ev--mini" : "";
+        const mini = dur < 60 ? " week-ev--mini" : "";   // <60 мин (15/30/45) — только заголовок; 60+ — заголовок+проект+время+уведомление
         const meta = `<span class="week-ev-side">${p ? `<span class="week-ev-proj proj-pill">${projPillInner(p)}</span>` : ""}<span class="week-ev-time">${fmtHM(s)}</span>${t.notify ? `<span class="week-ev-bell">${BELL_ON}</span>` : ""}</span>`;
         cardsHTML += `<div class="week-ev${mini}" data-id="${t.id}" style="top:${top}px;left:${left}px;width:${w}px;height:${height}px;--c:${statusColor("task", statusOf(t))}"><div class="week-ev-body"><span class="week-ev-title">${esc(t.title)}</span>${meta}</div><span class="week-ev-resize" aria-hidden="true"></span></div>`;
       });
@@ -1089,6 +1122,8 @@
     vp.addEventListener("wheel", (e) => { if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 18) { e.preventDefault(); const n = Date.now(); if (n - wlock > 380) { wlock = n; pageWeek(e.deltaX > 0 ? 1 : -1); } } }, { passive: false });
   })();
   // Перетаскивание события (перенос) и растягивание нижнего края — с компенсацией desktop-zoom
+  const DRAG_HOLD_MS = 500;   // стандартная для iOS пауза long-press перед захватом карточки
+  const DRAG_CANCEL_PX = 10;  // движение до срабатывания = скролл (отмена захвата)
   function attachEventInteract(el) {
     el.addEventListener("pointerdown", (e) => {
       if (e.button != null && e.button !== 0) return;
@@ -1097,11 +1132,28 @@
       const track = $("#tw-bodytrack"); const z = dndZoom(track);
       const rect = el.getBoundingClientRect(); const grabY = (e.clientY - rect.top) / z;
       const resize = e.clientY > rect.bottom - Math.min(24, rect.height * 0.5);
-      const startX = e.clientX, startY = e.clientY; let moved = false;
-      el.classList.add("dragging"); try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      const startX = e.clientX, startY = e.clientY, pid = e.pointerId;
+      let active = false, moved = false, holdTimer = null;
+
+      function engage() {   // long-press сработал — режим перетаскивания
+        holdTimer = null; active = true;
+        el.classList.add("dragging");
+        try { el.setPointerCapture(pid); } catch (_) {}
+        if (navigator.vibrate) { try { navigator.vibrate(8); } catch (_) {} }   // лёгкий отклик как в iOS
+      }
+      function teardown() {
+        if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+        try { el.releasePointerCapture(pid); } catch (_) {}
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+        el.classList.remove("dragging");
+      }
       const onMove = (ev) => {
-        const dx = ev.clientX - startX, dy = ev.clientY - startY;
-        if (!moved && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+        if (!active) {   // до захвата: заметное движение — это скролл, отменяем long-press
+          if (Math.abs(ev.clientX - startX) > DRAG_CANCEL_PX || Math.abs(ev.clientY - startY) > DRAG_CANCEL_PX) teardown();
+          return;
+        }
         moved = true; const cRect = track.getBoundingClientRect();
         const localY = (ev.clientY - cRect.top) / z, localX = (ev.clientX - cRect.left) / z;
         if (resize) {
@@ -1113,10 +1165,14 @@
           el.style.top = (startMin / 60 * hh) + "px"; el.style.left = (di * colW) + "px"; el.style.width = colW + "px";
           el.dataset.newStart = startMin; el.dataset.newDay = di;
         }
+        ev.preventDefault();
       };
+      const onCancel = () => teardown();
       const onUp = async () => {
-        try { el.releasePointerCapture(e.pointerId); } catch (_) {} window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); el.classList.remove("dragging");
-        if (!moved) { openTaskEdit(t, "tasks"); return; }
+        const wasActive = active, didMove = moved;
+        teardown();
+        if (!wasActive) { openTaskEdit(t, "tasks"); return; }   // не было удержания → тап (открыть карточку)
+        if (!didMove) { openTaskEdit(t, "tasks"); return; }      // удержали, но не двигали → тоже открыть
         const prev = { due_date: t.due_date, due_time: t.due_time, end_time: t.end_time, remind_at: t.remind_at, notified: t.notified };
         if (resize) { await Store.updateTask(t.id, { end_time: fmtHM(+el.dataset.newEnd) }); }
         else {
@@ -1126,8 +1182,10 @@
         }
         pushUndo("перенос", () => Store.updateTask(t.id, prev)); renderTasks();
       };
-      window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp);
-      e.preventDefault();
+      holdTimer = setTimeout(engage, DRAG_HOLD_MS);
+      window.addEventListener("pointermove", onMove, { passive: false });
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
     });
   }
   let projTasksById = {}, pFilterStatuses = new Set(defaultFilterIds("task")), pDateFilter = "";
@@ -1607,7 +1665,7 @@
     shopUndoSnapshot("список покупок");
     descLoad($("#shop-body"), DEFAULT_SHOP_HTML); saveShop();
   });
-  $("#shop-done").addEventListener("click", () => { saveShop(); showView("finance"); });
+  $("#shop-done").addEventListener("click", () => { saveShop(); showView("notes"); });
 
   /* ---------- Калории ---------- */
   const MEALS = [
@@ -1833,6 +1891,136 @@
   $("#foodadd-modal").addEventListener("click", (e) => { if (e.target.id === "foodadd-modal") { $("#foodadd-modal").hidden = true; refreshFoodViews(); } });
   function refreshFoodViews() { if (currentView === "foodmeal") renderFoodMeal(); else if (currentView === "food") renderFood(); }
 
+  /* ---------- Быстрое добавление через ИИ ----------
+     Свободный текст/голос → Edge Function ai-parse (Claude) → превью → создание через Store.*  */
+  let aiItem = null;
+  function aiEndpoint() { return (CFG.SUPABASE_URL || "").replace(/\/+$/, "") + "/functions/v1/ai-parse"; }
+  function aiContextNow() {
+    const d = new Date(); const wd = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"][d.getDay()];
+    return `${dstr(d)} ${pad(d.getHours())}:${pad(d.getMinutes())} (${wd})`;
+  }
+  function aiSetStatus(text, opts) {
+    const s = $("#ai-status"); opts = opts || {};
+    if (!text) { s.hidden = true; s.innerHTML = ""; s.classList.remove("is-error"); return; }
+    s.hidden = false; s.classList.toggle("is-error", !!opts.error);
+    s.innerHTML = (opts.loading ? `<span class="ai-spin"></span>` : "") + `<span>${esc(text)}</span>`;
+  }
+  function aiClear() {
+    $("#ai-text").value = ""; aiItem = null;
+    $("#ai-preview").hidden = true; $("#ai-preview").innerHTML = "";
+    aiSetStatus("");
+    $("#ai-foot").hidden = true;
+  }
+  async function aiParseText(text) {
+    const anon = CFG.SUPABASE_ANON_KEY || "";
+    const res = await fetch(aiEndpoint(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + anon, "apikey": anon },
+      body: JSON.stringify({
+        text, now: aiContextNow(), tz: (Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Moscow"),
+        projects: orderedProjects().map((p) => ({ id: p.id, name: p.name, emoji: p.emoji || "" })),
+        finCategories: (finCatsCache && finCatsCache.length ? finCatsCache : await Store.finCategories()).map((c) => ({ id: c.id, name: c.name })),
+      }),
+    });
+    let data = null; try { data = await res.json(); } catch (e) {}
+    if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || ("Ошибка сервера " + res.status));
+    return data.item;
+  }
+  async function aiRecognize() {
+    const text = ($("#ai-text").value || "").trim();
+    if (!text) { $("#ai-text").focus(); return; }
+    if (!CFG.SUPABASE_URL) { aiSetStatus("Разбор через ИИ требует входа в аккаунт (нужен сервер).", { error: true }); return; }
+    if (!(sb && Store.userId)) { aiSetStatus("Войдите в аккаунт, чтобы пользоваться распознаванием.", { error: true }); return; }
+    await loadProjects();
+    aiSetStatus("думаю…", { loading: true }); $("#ai-preview").hidden = true;
+    try { const it = await aiParseText(text); aiSetStatus(""); renderAiPreview(it); }
+    catch (e) { aiSetStatus(e.message || "Не удалось распознать", { error: true }); }
+  }
+  const AI_KIND_RU = { task: "задача", project: "проект", note: "заметка", expense: "расход", income: "доход", food: "калории", activity: "активность" };
+  function renderAiPreview(it) {
+    aiItem = it;
+    const hiddenHint = `<div class="ai-prev-hint">раздел скрыт в этой версии — запись сохранится и появится позже</div>`;
+    let html = `<div class="ai-prev-kind">${AI_KIND_RU[it.kind] || "запись"}</div>`;
+    if (it.kind === "task") {
+      const proj = it.project_id ? projById(it.project_id) : null;
+      const projLabel = proj ? `<span class="proj-pill"><span class="proj-emoji">${projEmoji(proj)}</span><span class="proj-name">${esc(proj.name)}</span></span>`
+        : (it.project_new ? `<span class="ai-prev-pill">🆕 ${esc(it.project_new)}</span>` : "");
+      const parts = [];
+      if (it.due_date) parts.push(fmtFull(it.due_date));
+      if (it.due_time) parts.push(it.due_time + (it.end_time ? "–" + it.end_time : ""));
+      if (it.notify) parts.push("🔔 напомнить");
+      html += `<div class="ai-prev-title">${esc(it.title || "")}</div>`;
+      html += `<div class="ai-prev-row">${projLabel}${parts.map((p) => `<span class="ai-prev-pill">${esc(p)}</span>`).join("")}</div>`;
+      if (it.description) html += `<div class="ai-prev-desc">${esc(it.description)}</div>`;
+    } else if (it.kind === "project") {
+      html += `<div class="ai-prev-title">${it.emoji ? esc(it.emoji) + " " : ""}${esc(it.name || it.title || "")}</div>`;
+    } else if (it.kind === "note") {
+      if (it.title) html += `<div class="ai-prev-title">${esc(it.title)}</div>`;
+      html += `<div class="ai-prev-desc">${esc(it.body || it.description || "")}</div>`;
+    } else if (it.kind === "expense" || it.kind === "income") {
+      html += `<div class="ai-prev-amount">${it.kind === "income" ? "+" : "−"}${fmtMoney(Math.round((it.amount || 0) * 100))} ₽</div>`;
+      const cat = it.category_id ? (finCatsCache || []).find((c) => c.id === it.category_id) : null;
+      const bits = []; if (it.note) bits.push(esc(it.note)); if (cat) bits.push(esc(cat.name));
+      if (bits.length) html += `<div class="ai-prev-row">${bits.map((b) => `<span class="ai-prev-pill">${b}</span>`).join("")}</div>`;
+      if (!FEATURES.finance) html += hiddenHint;
+    } else if (it.kind === "food") {
+      html += `<div class="ai-prev-title">${esc(it.name || it.title || "")}</div>`;
+      html += `<div class="ai-prev-row"><span class="ai-prev-pill">${Math.round(it.grams || 100)} г</span></div>`;
+      if (!FEATURES.food) html += hiddenHint;
+    } else if (it.kind === "activity") {
+      html += `<div class="ai-prev-title">${esc(it.name || it.title || "")}</div>`;
+      html += `<div class="ai-prev-row"><span class="ai-prev-pill">${Math.round(it.minutes || 0)} мин</span></div>`;
+      if (!FEATURES.food) html += hiddenHint;
+    }
+    $("#ai-preview").innerHTML = html; $("#ai-preview").hidden = false;
+    $("#ai-foot").hidden = false;
+  }
+  function aiMatchFood(name) { const q = (name || "").toLowerCase().trim(); return foodDbById[name] || (foodDb || []).find((x) => x.name.toLowerCase() === q) || (foodDb || []).find((x) => x.name.toLowerCase().startsWith(q)) || (foodDb || []).find((x) => x.name.toLowerCase().includes(q) || (x.aliases || []).some((a) => a.toLowerCase().includes(q))); }
+  function aiMatchAct(name) { const q = (name || "").toLowerCase().trim(); return actDbById[name] || (actDb || []).find((x) => x.name.toLowerCase() === q) || (actDb || []).find((x) => x.name.toLowerCase().startsWith(q)) || (actDb || []).find((x) => x.name.toLowerCase().includes(q)); }
+  function afterAiAdd(msg, view) { toast(msg); aiClear(); if (view) showView(view); }
+  async function aiAdd() {
+    const it = aiItem; if (!it) return;
+    try {
+      if (it.kind === "task") {
+        let pid = it.project_id || null;
+        if (!pid && it.project_new) { const p = await Store.addProject({ name: it.project_new }); pid = p && p.id; await loadProjects(); }
+        const due_date = it.due_date || todayStr(); const notify = !!it.notify;
+        const fields = { title: it.title || "Задача", description: it.description || "", due_date, due_time: it.due_time || null, end_time: it.end_time || null, notify, project_id: pid || null, status: "progress", is_done: false, remind_at: computeRemindAt(due_date, it.due_time || null, notify), notified: false };
+        const row = await Store.addTask(fields); if (row) pushUndo("новая задача", () => Store.deleteTask(row.id));
+        afterAiAdd("задача добавлена", "tasks");
+      } else if (it.kind === "project") {
+        const row = await Store.addProject({ emoji: it.emoji || "", name: it.name || it.title || "Проект" }); if (row) pushUndo("новый проект", () => Store.deleteProject(row.id));
+        await loadProjects(); afterAiAdd("проект создан", "projects");
+      } else if (it.kind === "note") {
+        const row = await Store.addNote({ title: it.title || "", body: it.body || it.description || "" }); if (row) pushUndo("новая заметка", () => Store.deleteNote(row.id));
+        afterAiAdd("заметка добавлена", "notes");
+      } else if (it.kind === "expense" || it.kind === "income") {
+        const row = await Store.addFinTx({ kind: it.kind === "income" ? "income" : "expense", amount_minor: Math.round((it.amount || 0) * 100), category_id: it.category_id || null, note: it.note || it.title || null });
+        if (row) pushUndo(it.kind === "income" ? "доход" : "расход", () => Store.deleteFinTx(row.id));
+        afterAiAdd(it.kind === "income" ? "доход добавлен" : "расход добавлен", FEATURES.finance ? "finance" : null);
+      } else if (it.kind === "food") {
+        await loadFoodDb(); const m = aiMatchFood(it.name || it.title || ""); const grams = Math.max(1, Math.round(it.grams || 100));
+        const kcal = m ? Math.round(m.kcal100 * grams / 100) : 0;
+        const row = await Store.addFood({ date: todayStr(), meal: it.meal || "other", ref_id: m ? m.name : (it.name || it.title || ""), name: m ? m.name : (it.name || it.title || ""), amount: grams, kcal });
+        if (row) pushUndo("калории", () => Store.deleteFood(row.id));
+        afterAiAdd("калории добавлены", FEATURES.food ? "food" : null);
+      } else if (it.kind === "activity") {
+        await loadFoodDb(); const a = aiMatchAct(it.name || it.title || ""); const minutes = Math.max(1, Math.round(it.minutes || 0));
+        const kcal = a ? Math.round(a.kcalMin * minutes) : 0;
+        const row = await Store.addFood({ date: todayStr(), meal: "activity", ref_id: a ? a.name : (it.name || it.title || ""), name: a ? a.name : (it.name || it.title || ""), amount: minutes, kcal });
+        if (row) pushUndo("активность", () => Store.deleteFood(row.id));
+        afterAiAdd("активность добавлена", FEATURES.food ? "food" : null);
+      } else { toast("Не удалось распознать"); }
+    } catch (e) { aiSetStatus("Не удалось добавить: " + (e.message || e), { error: true }); }
+  }
+  // Голоса больше нет: распознавание запускает стрелка. Заглушка на случай вызова из showView.
+  function aiStopVoice() {}
+  // Высота поля фиксирована в CSS (180px) — ничего не пересчитываем, страница не дёргается при фокусе.
+  $("#ai-send").addEventListener("click", aiRecognize);
+  $("#ai-add").addEventListener("click", aiAdd);
+  $("#ai-clear").addEventListener("click", aiClear);
+  $("#ai-text").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); aiRecognize(); } });
+
   /* Окно создания операции */
   let finTxKind = "expense", finTxCatId = null, finTxIncomeOnly = false, finTxEditId = null, finTxEditPrev = null;
   function renderFinTxCats() {
@@ -1954,24 +2142,88 @@
     const pop = $("#account-pop"); if (!pop.hidden) { pop.hidden = true; return; }
     let email = "", name = ""; try { const { data } = await sb.auth.getUser(); email = data && data.user && data.user.email; name = data && data.user && data.user.user_metadata && (data.user.user_metadata.full_name || data.user.user_metadata.name) || ""; } catch {}
     const nameEl = $("#account-name"); nameEl.textContent = name; nameEl.hidden = !name;
-    $("#account-email").textContent = email || "аккаунт"; updateNotifBtn(); pop.hidden = false;
+    $("#account-email").textContent = email || "аккаунт"; refreshNotifPerm(); pop.hidden = false;
   });
   $("#account-signout").addEventListener("click", async () => { $("#account-pop").hidden = true; if (sb) await sb.auth.signOut(); Store.userId = null; hasStarted = false; projectsCache = []; _projLoading = null; taskStatusesCache = seedStatuses(); projStatusesCache = seedStatuses(); _statusLoading = null; showAuth(); });
   document.addEventListener("click", (e) => { if (!$("#account-pop").hidden && !e.target.closest("#account-pop") && !e.target.closest("#account-btn")) $("#account-pop").hidden = true; });
 
-  /* ---------- Пуш-уведомления ---------- */
+  /* ---------- Уведомления (переключатель: вкл/выкл) ----------
+     Нативно (Capacitor) — локальные уведомления на устройстве по remind_at.
+     В браузере — web-push (VAPID + Service Worker + Supabase).
+     Разрешение спрашивается только по нажатию колокольчика. */
   const VAPID_PUBLIC = CFG.VAPID_PUBLIC || "";
+  const LN = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) || null;
+  let nativePerm = null;   // 'granted' | 'denied' | 'prompt' — статус нативного разрешения
   function urlB64ToUint8(b) { const p = "=".repeat((4 - (b.length % 4)) % 4); const s = (b + p).replace(/-/g, "+").replace(/_/g, "/"); const raw = atob(s); const a = new Uint8Array(raw.length); for (let i = 0; i < raw.length; i++) a[i] = raw.charCodeAt(i); return a; }
   function pushSupported() { return ("Notification" in window) && ("serviceWorker" in navigator) && ("PushManager" in window); }
-  function updateNotifBtn() { const b = $("#notif-btn"); b.hidden = !(pushSupported() && sb && Store.userId); if (b.hidden) return; b.textContent = Notification.permission === "granted" ? "Уведомления включены" : "Включить уведомления"; }
-  async function enableNotifications() {
+  function notifKey() { return "gunco_notif_" + (Store.userId || "local"); }
+  function notifPref() { try { return localStorage.getItem(notifKey()); } catch (e) { return null; } }
+  function setNotifPref(v) { try { localStorage.setItem(notifKey(), v); } catch (e) {} }
+  function notifAvailable() { return isNative ? !!LN() : (pushSupported() && !!sb && !!Store.userId); }
+  function permGranted() { return isNative ? (nativePerm === "granted") : (("Notification" in window) && Notification.permission === "granted"); }
+  function permDenied() { return isNative ? (nativePerm === "denied") : (("Notification" in window) && Notification.permission === "denied"); }
+  function notifOn() { return permGranted() && notifPref() === "1"; }
+  // Рисуем колокольчик: обычный при включённых, зачёркнутый при выключенных/запрещённых
+  function renderNotifBtn() {
+    const b = $("#notif-btn"); if (!b) return;
+    if (!notifAvailable()) { b.hidden = true; return; }
+    b.hidden = false; const on = notifOn();
+    b.classList.toggle("off", !on);
+    $("#notif-label").textContent = on ? "уведомления вкл" : (permDenied() ? "уведомления запрещены" : "уведомления выкл");
+  }
+  async function refreshNotifPerm() { if (isNative && LN()) { try { nativePerm = (await LN().checkPermissions()).display; } catch (e) {} } renderNotifBtn(); }
+  async function enableNotif() {
+    if (isNative) {
+      const ln = LN(); if (!ln) { toast("Уведомления недоступны"); return; }
+      try { nativePerm = (await ln.requestPermissions()).display; } catch (e) {}
+      if (nativePerm !== "granted") { toast("Разрешение не выдано"); renderNotifBtn(); return; }
+      setNotifPref("1"); await syncNativeReminders(); toast("Уведомления включены"); renderNotifBtn(); return;
+    }
     if (!pushSupported()) { toast("Уведомления не поддерживаются устройством"); return; }
     if (!VAPID_PUBLIC) { toast("Не настроен ключ уведомлений"); return; }
     let perm = Notification.permission; if (perm === "default") perm = await Notification.requestPermission();
-    if (perm !== "granted") { toast("Разрешение не выдано"); return; }
-    try { const reg = await navigator.serviceWorker.ready; let sub = await reg.pushManager.getSubscription(); if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(VAPID_PUBLIC) }); const j = sub.toJSON(); if (sb && Store.userId) await sb.from("push_subscriptions").upsert({ endpoint: j.endpoint, user_id: Store.userId, p256dh: j.keys.p256dh, auth: j.keys.auth }, { onConflict: "endpoint" }); toast("Уведомления включены"); updateNotifBtn(); } catch { toast("Не удалось включить уведомления"); }
+    if (perm !== "granted") { toast("Разрешение не выдано"); renderNotifBtn(); return; }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(VAPID_PUBLIC) });
+      const j = sub.toJSON();
+      if (sb && Store.userId) await sb.from("push_subscriptions").upsert({ endpoint: j.endpoint, user_id: Store.userId, p256dh: j.keys.p256dh, auth: j.keys.auth }, { onConflict: "endpoint" });
+      setNotifPref("1"); toast("Уведомления включены");
+    } catch { toast("Не удалось включить уведомления"); }
+    renderNotifBtn();
   }
-  $("#notif-btn").addEventListener("click", enableNotifications);
+  async function disableNotif() {
+    setNotifPref("0");
+    if (isNative) { const ln = LN(); if (ln) { try { const p = await ln.getPending(); if (p.notifications && p.notifications.length) await ln.cancel({ notifications: p.notifications.map((n) => ({ id: n.id })) }); } catch (e) {} } }
+    else if (pushSupported()) {
+      try { const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); if (sub) { const ep = sub.endpoint; await sub.unsubscribe(); if (sb && Store.userId) await sb.from("push_subscriptions").delete().eq("endpoint", ep); } } catch (e) {}
+    }
+    toast("Уведомления выключены"); renderNotifBtn();
+  }
+  async function toggleNotif() {
+    if (!notifAvailable()) return;
+    if (permDenied()) { toast("Разрешите уведомления в настройках устройства"); return; }
+    if (notifOn()) await disableNotif(); else await enableNotif();
+  }
+  $("#notif-btn").addEventListener("click", toggleNotif);
+  // Нативно: пересобрать локальные напоминания из задач (отменить всё → запланировать будущие по remind_at)
+  async function syncNativeReminders() {
+    if (!isNative || notifPref() !== "1") return;
+    const ln = LN(); if (!ln) return;
+    try {
+      const p = await ln.getPending();
+      if (p.notifications && p.notifications.length) await ln.cancel({ notifications: p.notifications.map((n) => ({ id: n.id })) });
+      const tasks = await Store.tasks(); const now = Date.now();
+      const list = tasks
+        .filter((t) => t.notify !== false && t.remind_at && !t.notified && new Date(t.remind_at).getTime() > now)
+        .slice(0, 60)   // лимит iOS ~64 запланированных
+        .map((t, i) => ({ id: i + 1, title: t.title || "Задача", body: "Напоминание", schedule: { at: new Date(t.remind_at) } }));
+      if (list.length) await ln.schedule({ notifications: list });
+    } catch (e) {}
+  }
+  let notifSyncTimer = null;
+  function scheduleReminderSync() { if (!isNative || notifPref() !== "1") return; clearTimeout(notifSyncTimer); notifSyncTimer = setTimeout(syncNativeReminders, 600); }
 
   /* ---------- Вход ---------- */
   function authMsg(t, type) { const el = $("#auth-msg"); el.textContent = t || ""; el.classList.toggle("is-error", type === "error"); }
@@ -1995,6 +2247,8 @@
     await loadStatuses();
     await loadProjects();
     loadFilters(); applyFiltersUI(); renderCardMeta(); showView("tasks");
+    // нативно: восстановить статус уведомлений и пересобрать локальные напоминания
+    if (isNative) { applyNativeStatusBar(); refreshNotifPerm(); syncNativeReminders(); }
     // если приложение открыто из пуш-уведомления (?task=<id>) — раскрыть карточку
     const tid = new URLSearchParams(location.search).get("task");
     if (tid) { history.replaceState(null, "", location.pathname); openTaskById(tid); }
@@ -2057,7 +2311,7 @@
     startApp();
   }
 
-  if ("serviceWorker" in navigator) {
+  if ("serviceWorker" in navigator && !isNative) {   // в нативном приложении SW не нужен (ассеты локальные, уведомления нативные)
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
     // клик по пуш-уведомлению у уже открытого приложения → раскрыть карточку задачи
     navigator.serviceWorker.addEventListener("message", (e) => {
