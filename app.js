@@ -1893,7 +1893,7 @@
 
   /* ---------- Быстрое добавление через ИИ ----------
      Свободный текст/голос → Edge Function ai-parse (Claude) → превью → создание через Store.*  */
-  let aiItem = null;
+  let aiItems = [], aiTasksFull = [], aiNotesFull = [];
   function aiEndpoint() { return (CFG.SUPABASE_URL || "").replace(/\/+$/, "") + "/functions/v1/ai-parse"; }
   function aiContextNow() {
     const d = new Date(); const wd = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"][d.getDay()];
@@ -1906,10 +1906,21 @@
     s.innerHTML = (opts.loading ? `<span class="ai-spin"></span>` : "") + `<span>${esc(text)}</span>`;
   }
   function aiClear() {
-    $("#ai-text").value = ""; aiItem = null;
+    $("#ai-text").value = ""; aiItems = [];
     $("#ai-preview").hidden = true; $("#ai-preview").innerHTML = "";
     aiSetStatus("");
     $("#ai-foot").hidden = true;
+    const add = $("#ai-add"); add.textContent = "Добавить"; add.classList.remove("btn--danger");
+  }
+  // Компактные списки существующих сущностей — чтобы ИИ мог сослаться на них при изменении/удалении.
+  function aiCompactTasks(full) {
+    return (full || []).slice()
+      .sort((a, b) => (a.due_date || "9999").localeCompare(b.due_date || "9999"))
+      .slice(0, 120)
+      .map((t) => ({ id: t.id, title: t.title || "", date: t.due_date || "", time: t.due_time || "", done: t.is_done === true || statusIsDone("task", t.status) }));
+  }
+  function aiCompactNotes(full) {
+    return (full || []).slice(0, 80).map((n) => ({ id: n.id, title: n.title || (n.body || "").replace(/<[^>]+>/g, " ").trim().slice(0, 40) || "заметка" }));
   }
   async function aiParseText(text) {
     const anon = CFG.SUPABASE_ANON_KEY || "";
@@ -1920,11 +1931,13 @@
         text, now: aiContextNow(), tz: (Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Moscow"),
         projects: orderedProjects().map((p) => ({ id: p.id, name: p.name, emoji: p.emoji || "" })),
         finCategories: (finCatsCache && finCatsCache.length ? finCatsCache : await Store.finCategories()).map((c) => ({ id: c.id, name: c.name })),
+        tasks: aiCompactTasks(aiTasksFull),
+        notes: aiCompactNotes(aiNotesFull),
       }),
     });
     let data = null; try { data = await res.json(); } catch (e) {}
     if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || ("Ошибка сервера " + res.status));
-    return data.item;
+    return Array.isArray(data.items) ? data.items : (data.item ? [data.item] : []);
   }
   async function aiRecognize() {
     const text = ($("#ai-text").value || "").trim();
@@ -1932,15 +1945,31 @@
     if (!CFG.SUPABASE_URL) { aiSetStatus("Разбор через ИИ требует входа в аккаунт (нужен сервер).", { error: true }); return; }
     if (!(sb && Store.userId)) { aiSetStatus("Войдите в аккаунт, чтобы пользоваться распознаванием.", { error: true }); return; }
     await loadProjects();
+    try { aiTasksFull = await Store.tasks(); aiNotesFull = await Store.notes(); } catch (e) {}   // контекст для изменения/удаления
     aiSetStatus("думаю…", { loading: true }); $("#ai-preview").hidden = true;
-    try { const it = await aiParseText(text); aiSetStatus(""); renderAiPreview(it); }
+    try { const items = await aiParseText(text); if (!items.length) { aiSetStatus("Не удалось распознать", { error: true }); return; } aiSetStatus(""); renderAiPreview(items); }
     catch (e) { aiSetStatus(e.message || "Не удалось распознать", { error: true }); }
   }
   const AI_KIND_RU = { task: "задача", project: "проект", note: "заметка", expense: "расход", income: "доход", food: "калории", activity: "активность" };
-  function renderAiPreview(it) {
-    aiItem = it;
+  function aiTarget(it) {
+    if (!it || !it.target_id) return null;
+    if (it.kind === "task") return aiTasksFull.find((t) => t.id === it.target_id) || null;
+    if (it.kind === "project") return projById(it.target_id);
+    if (it.kind === "note") return aiNotesFull.find((n) => n.id === it.target_id) || null;
+    return null;
+  }
+  function aiPreviewCard(it) {
     const hiddenHint = `<div class="ai-prev-hint">раздел скрыт в этой версии — запись сохранится и появится позже</div>`;
-    let html = `<div class="ai-prev-kind">${AI_KIND_RU[it.kind] || "запись"}</div>`;
+    const act = it.action === "delete" ? "удалить" : it.action === "update" ? "изменить" : null;
+    const tgt = (it.action === "update" || it.action === "delete") ? aiTarget(it) : null;
+    const kindRu = AI_KIND_RU[it.kind] || "запись";
+    let html = act ? `<div class="ai-prev-kind"><span class="ai-prev-act ai-prev-act--${it.action}">${act}</span> · ${kindRu}</div>`
+                   : `<div class="ai-prev-kind">${kindRu}</div>`;
+    if (it.action === "delete") {
+      html += `<div class="ai-prev-title">${tgt ? esc(tgt.title || tgt.name || "запись") : "запись не найдена"}</div>`;
+      if (!tgt) html += `<div class="ai-prev-hint">не нашёл такую — проверьте формулировку</div>`;
+      return `<div class="ai-prev-card${tgt ? "" : " is-warn"}">${html}</div>`;
+    }
     if (it.kind === "task") {
       const proj = it.project_id ? projById(it.project_id) : null;
       const projLabel = proj ? `<span class="proj-pill"><span class="proj-emoji">${projEmoji(proj)}</span><span class="proj-name">${esc(proj.name)}</span></span>`
@@ -1949,13 +1978,18 @@
       if (it.due_date) parts.push(fmtFull(it.due_date));
       if (it.due_time) parts.push(it.due_time + (it.end_time ? "–" + it.end_time : ""));
       if (it.notify) parts.push("🔔 напомнить");
-      html += `<div class="ai-prev-title">${esc(it.title || "")}</div>`;
-      html += `<div class="ai-prev-row">${projLabel}${parts.map((p) => `<span class="ai-prev-pill">${esc(p)}</span>`).join("")}</div>`;
+      if (it.mark_done === true) parts.push("✓ выполнена");
+      if (it.mark_done === false) parts.push("↩ в работу");
+      html += `<div class="ai-prev-title">${esc(it.title || (tgt && tgt.title) || "")}</div>`;
+      const row = `${projLabel}${parts.map((p) => `<span class="ai-prev-pill">${esc(p)}</span>`).join("")}`;
+      if (row) html += `<div class="ai-prev-row">${row}</div>`;
       if (it.description) html += `<div class="ai-prev-desc">${esc(it.description)}</div>`;
+      if (it.action === "update" && !tgt) html += `<div class="ai-prev-hint">не нашёл задачу — будет создана новая</div>`;
     } else if (it.kind === "project") {
-      html += `<div class="ai-prev-title">${it.emoji ? esc(it.emoji) + " " : ""}${esc(it.name || it.title || "")}</div>`;
+      html += `<div class="ai-prev-title">${it.emoji ? esc(it.emoji) + " " : ""}${esc(it.name || it.title || (tgt && tgt.name) || "")}</div>`;
     } else if (it.kind === "note") {
-      if (it.title) html += `<div class="ai-prev-title">${esc(it.title)}</div>`;
+      const title = it.title || (tgt && tgt.title) || "";
+      if (title) html += `<div class="ai-prev-title">${esc(title)}</div>`;
       html += `<div class="ai-prev-desc">${esc(it.body || it.description || "")}</div>`;
     } else if (it.kind === "expense" || it.kind === "income") {
       html += `<div class="ai-prev-amount">${it.kind === "income" ? "+" : "−"}${fmtMoney(Math.round((it.amount || 0) * 100))} ₽</div>`;
@@ -1972,46 +2006,113 @@
       html += `<div class="ai-prev-row"><span class="ai-prev-pill">${Math.round(it.minutes || 0)} мин</span></div>`;
       if (!FEATURES.food) html += hiddenHint;
     }
-    $("#ai-preview").innerHTML = html; $("#ai-preview").hidden = false;
+    return `<div class="ai-prev-card">${html}</div>`;
+  }
+  function renderAiPreview(items) {
+    aiItems = Array.isArray(items) ? items : (items ? [items] : []);
+    $("#ai-preview").innerHTML = aiItems.map(aiPreviewCard).join("");
+    $("#ai-preview").hidden = false;
+    const hasDel = aiItems.some((x) => x.action === "delete");
+    const hasMod = aiItems.some((x) => x.action === "update" || x.action === "delete");
+    const add = $("#ai-add");
+    add.textContent = aiItems.length > 1 ? (hasMod ? "Применить всё" : "Добавить всё")
+      : (aiItems[0] && aiItems[0].action === "delete" ? "Удалить" : aiItems[0] && aiItems[0].action === "update" ? "Сохранить" : "Добавить");
+    add.classList.toggle("btn--danger", hasDel);
     $("#ai-foot").hidden = false;
   }
   function aiMatchFood(name) { const q = (name || "").toLowerCase().trim(); return foodDbById[name] || (foodDb || []).find((x) => x.name.toLowerCase() === q) || (foodDb || []).find((x) => x.name.toLowerCase().startsWith(q)) || (foodDb || []).find((x) => x.name.toLowerCase().includes(q) || (x.aliases || []).some((a) => a.toLowerCase().includes(q))); }
   function aiMatchAct(name) { const q = (name || "").toLowerCase().trim(); return actDbById[name] || (actDb || []).find((x) => x.name.toLowerCase() === q) || (actDb || []).find((x) => x.name.toLowerCase().startsWith(q)) || (actDb || []).find((x) => x.name.toLowerCase().includes(q)); }
   function afterAiAdd(msg, view) { toast(msg); aiClear(); if (view) showView(view); }
+  // Применить ОДНУ запись (create/update/delete). Возвращает раздел для перехода или null.
+  async function aiApplyItem(it) {
+    const action = it.action || "create";
+    if (action === "delete") {
+      const tgt = aiTarget(it); if (!tgt) return null;
+      if (it.kind === "project") { await Store.deleteProject(tgt.id); await loadProjects(); return "projects"; }
+      if (it.kind === "note") { await Store.deleteNote(tgt.id); return "notes"; }
+      await Store.deleteTask(tgt.id); return "tasks";
+    }
+    if (action === "update") {
+      const tgt = aiTarget(it);
+      if (tgt && it.kind === "task") {
+        const patch = {};
+        if (it.title != null) patch.title = it.title;
+        if (it.description != null) patch.description = it.description;
+        if (it.due_date != null) patch.due_date = it.due_date;
+        if (it.due_time !== undefined) patch.due_time = it.due_time || null;
+        if (it.end_time !== undefined) patch.end_time = it.end_time || null;
+        if (it.notify != null) patch.notify = !!it.notify;
+        if (it.project_id != null) patch.project_id = it.project_id;
+        if (it.project_new) { const p = await Store.addProject({ name: it.project_new }); patch.project_id = p && p.id; await loadProjects(); }
+        if (it.mark_done != null) { patch.is_done = !!it.mark_done; patch.status = it.mark_done ? "done" : "progress"; }
+        if ("due_date" in patch || "due_time" in patch || "notify" in patch) {
+          const date = "due_date" in patch ? patch.due_date : tgt.due_date;
+          const time = "due_time" in patch ? patch.due_time : tgt.due_time;
+          const notify = "notify" in patch ? patch.notify : (tgt.notify !== false);
+          patch.remind_at = computeRemindAt(date, time, notify); patch.notified = false;
+        }
+        const prev = {}; Object.keys(patch).forEach((k) => { prev[k] = tgt[k]; });
+        await Store.updateTask(tgt.id, patch); pushUndo("изменение задачи", () => Store.updateTask(tgt.id, prev));
+        return "tasks";
+      }
+      if (tgt && it.kind === "project") {
+        const patch = {}; if (it.name != null) patch.name = it.name; if (it.emoji != null) patch.emoji = it.emoji;
+        if (Object.keys(patch).length) await Store.updateProject(tgt.id, patch); await loadProjects(); return "projects";
+      }
+      if (tgt && it.kind === "note") {
+        const patch = {}; if (it.title != null) patch.title = it.title; const nb = (it.body != null ? it.body : it.description); if (nb != null) patch.body = nb;
+        if (Object.keys(patch).length) await Store.updateNote(tgt.id, patch); return "notes";
+      }
+      // цель не найдена — создаём заново (проваливаемся в create ниже)
+    }
+    // СОЗДАНИЕ (по умолчанию и как fallback для update без цели)
+    if (it.kind === "task") {
+      let pid = it.project_id || null;
+      if (!pid && it.project_new) { const p = await Store.addProject({ name: it.project_new }); pid = p && p.id; await loadProjects(); }
+      const due_date = it.due_date || todayStr(); const notify = !!it.notify;
+      const fields = { title: it.title || "Задача", description: it.description || "", due_date, due_time: it.due_time || null, end_time: it.end_time || null, notify, project_id: pid || null, status: it.mark_done ? "done" : "progress", is_done: !!it.mark_done, remind_at: computeRemindAt(due_date, it.due_time || null, notify), notified: false };
+      const row = await Store.addTask(fields); if (row) pushUndo("новая задача", () => Store.deleteTask(row.id));
+      return "tasks";
+    }
+    if (it.kind === "project") {
+      const row = await Store.addProject({ emoji: it.emoji || "", name: it.name || it.title || "Проект" }); if (row) pushUndo("новый проект", () => Store.deleteProject(row.id));
+      await loadProjects(); return "projects";
+    }
+    if (it.kind === "note") {
+      const row = await Store.addNote({ title: it.title || "", body: it.body || it.description || "" }); if (row) pushUndo("новая заметка", () => Store.deleteNote(row.id));
+      return "notes";
+    }
+    if (it.kind === "expense" || it.kind === "income") {
+      const row = await Store.addFinTx({ kind: it.kind === "income" ? "income" : "expense", amount_minor: Math.round((it.amount || 0) * 100), category_id: it.category_id || null, note: it.note || it.title || null });
+      if (row) pushUndo(it.kind === "income" ? "доход" : "расход", () => Store.deleteFinTx(row.id));
+      return FEATURES.finance ? "finance" : null;
+    }
+    if (it.kind === "food") {
+      await loadFoodDb(); const m = aiMatchFood(it.name || it.title || ""); const grams = Math.max(1, Math.round(it.grams || 100));
+      const kcal = m ? Math.round(m.kcal100 * grams / 100) : 0;
+      const row = await Store.addFood({ date: todayStr(), meal: it.meal || "other", ref_id: m ? m.name : (it.name || it.title || ""), name: m ? m.name : (it.name || it.title || ""), amount: grams, kcal });
+      if (row) pushUndo("калории", () => Store.deleteFood(row.id));
+      return FEATURES.food ? "food" : null;
+    }
+    if (it.kind === "activity") {
+      await loadFoodDb(); const a = aiMatchAct(it.name || it.title || ""); const minutes = Math.max(1, Math.round(it.minutes || 0));
+      const kcal = a ? Math.round(a.kcalMin * minutes) : 0;
+      const row = await Store.addFood({ date: todayStr(), meal: "activity", ref_id: a ? a.name : (it.name || it.title || ""), name: a ? a.name : (it.name || it.title || ""), amount: minutes, kcal });
+      if (row) pushUndo("активность", () => Store.deleteFood(row.id));
+      return FEATURES.food ? "food" : null;
+    }
+    return null;
+  }
   async function aiAdd() {
-    const it = aiItem; if (!it) return;
-    try {
-      if (it.kind === "task") {
-        let pid = it.project_id || null;
-        if (!pid && it.project_new) { const p = await Store.addProject({ name: it.project_new }); pid = p && p.id; await loadProjects(); }
-        const due_date = it.due_date || todayStr(); const notify = !!it.notify;
-        const fields = { title: it.title || "Задача", description: it.description || "", due_date, due_time: it.due_time || null, end_time: it.end_time || null, notify, project_id: pid || null, status: "progress", is_done: false, remind_at: computeRemindAt(due_date, it.due_time || null, notify), notified: false };
-        const row = await Store.addTask(fields); if (row) pushUndo("новая задача", () => Store.deleteTask(row.id));
-        afterAiAdd("задача добавлена", "tasks");
-      } else if (it.kind === "project") {
-        const row = await Store.addProject({ emoji: it.emoji || "", name: it.name || it.title || "Проект" }); if (row) pushUndo("новый проект", () => Store.deleteProject(row.id));
-        await loadProjects(); afterAiAdd("проект создан", "projects");
-      } else if (it.kind === "note") {
-        const row = await Store.addNote({ title: it.title || "", body: it.body || it.description || "" }); if (row) pushUndo("новая заметка", () => Store.deleteNote(row.id));
-        afterAiAdd("заметка добавлена", "notes");
-      } else if (it.kind === "expense" || it.kind === "income") {
-        const row = await Store.addFinTx({ kind: it.kind === "income" ? "income" : "expense", amount_minor: Math.round((it.amount || 0) * 100), category_id: it.category_id || null, note: it.note || it.title || null });
-        if (row) pushUndo(it.kind === "income" ? "доход" : "расход", () => Store.deleteFinTx(row.id));
-        afterAiAdd(it.kind === "income" ? "доход добавлен" : "расход добавлен", FEATURES.finance ? "finance" : null);
-      } else if (it.kind === "food") {
-        await loadFoodDb(); const m = aiMatchFood(it.name || it.title || ""); const grams = Math.max(1, Math.round(it.grams || 100));
-        const kcal = m ? Math.round(m.kcal100 * grams / 100) : 0;
-        const row = await Store.addFood({ date: todayStr(), meal: it.meal || "other", ref_id: m ? m.name : (it.name || it.title || ""), name: m ? m.name : (it.name || it.title || ""), amount: grams, kcal });
-        if (row) pushUndo("калории", () => Store.deleteFood(row.id));
-        afterAiAdd("калории добавлены", FEATURES.food ? "food" : null);
-      } else if (it.kind === "activity") {
-        await loadFoodDb(); const a = aiMatchAct(it.name || it.title || ""); const minutes = Math.max(1, Math.round(it.minutes || 0));
-        const kcal = a ? Math.round(a.kcalMin * minutes) : 0;
-        const row = await Store.addFood({ date: todayStr(), meal: "activity", ref_id: a ? a.name : (it.name || it.title || ""), name: a ? a.name : (it.name || it.title || ""), amount: minutes, kcal });
-        if (row) pushUndo("активность", () => Store.deleteFood(row.id));
-        afterAiAdd("активность добавлена", FEATURES.food ? "food" : null);
-      } else { toast("Не удалось распознать"); }
-    } catch (e) { aiSetStatus("Не удалось добавить: " + (e.message || e), { error: true }); }
+    const items = aiItems; if (!items || !items.length) return;
+    const dels = items.filter((x) => x.action === "delete" && aiTarget(x));
+    if (dels.length) { const ok = await askConfirm(dels.length > 1 ? `Удалить записей: ${dels.length}?` : "Удалить запись?"); if (!ok) return; }
+    aiSetStatus("применяю…", { loading: true });
+    let done = 0, lastView = null;
+    for (const it of items) { try { const v = await aiApplyItem(it); if (v) lastView = v; done++; } catch (e) {} }
+    aiSetStatus("");
+    if (!done) { aiSetStatus("Не удалось применить", { error: true }); return; }
+    afterAiAdd(items.length > 1 ? `готово: ${done}` : "готово", lastView);
   }
   // Голоса больше нет: распознавание запускает стрелка. Заглушка на случай вызова из showView.
   function aiStopVoice() {}
