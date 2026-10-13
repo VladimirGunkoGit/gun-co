@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=123" />
+<link rel="stylesheet" href="styles.css?v=124" />
 </head>
 <body>
 
@@ -336,11 +336,12 @@
 
   </main>
 
-  <!-- Нижнее меню: 3 раздела. Толщина иконок задаётся в CSS (.nav-ico svg) — одинаковая у всех. -->
+  <!-- Нижнее меню: 5 кнопок (добавить, задачи, проекты, деньги, заметки). Толщина иконок задаётся в CSS (.nav-ico svg) — одинаковая у всех. -->
   <nav id="page-nav" class="page-nav">
     <button class="nav-item" data-view="ai" type="button" aria-label="Быстрое добавление"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span></button>
     <button class="nav-item active" data-view="tasks" type="button" aria-label="Задачи"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><path d="M8 12.2l2.6 2.6L16.5 9"/></svg></span></button>
     <button class="nav-item" data-view="projects" type="button" aria-label="Проекты"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8a2 2 0 0 1 2-2h3l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M6 15h6"/></svg></span></button>
+    <button class="nav-item" data-view="money" type="button" aria-label="Деньги"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 7.5V6a2 2 0 0 0-2-2h-9A2.5 2.5 0 0 0 4 6.5"/><rect x="4" y="7.5" width="16" height="12" rx="2.5"/><path d="M15.5 13.5h1.5"/></svg></span></button>
     <button class="nav-item" data-view="notes" type="button" aria-label="Заметки"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 10h7M8.5 14h4.5"/></svg></span></button>
   </nav>
 
@@ -613,6 +614,9 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=123"></script>
+<script src="money-core.js?v=124"></script>
+<script src="money-xlsx.js?v=124"></script>
+<script src="money.js?v=124"></script>
+<script src="app.js?v=124"></script>
 </body>
 </html>

@@ -11,7 +11,7 @@
   const CFG = window.GUNCO_CONFIG || {};
 
   /* ---------- Разделы этого деплоя ---------- */
-  const FEATURES = { finance: false, food: false, habits: false };   // включить в будущих версиях
+  const FEATURES = { finance: false, food: false, habits: false, money: true };   // finance — старый раздел, заменён «деньгами» (money.js)
 
   /* ---------- Платформа: нативное приложение vs браузер ---------- */
   const isNative = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform());
@@ -54,10 +54,18 @@
     { id: "late",     name: "опоздание",   c: "232,155,184", ord: 4,   done: false },
     { id: "done",     name: "готово",      c: "134,217,152", ord: 999, done: true  },
   ];
-  function seedStatuses() { return BUILTIN_STATUSES.map((s) => ({ ...s, builtin: true })); }
-  let taskStatusesCache = seedStatuses(), projStatusesCache = seedStatuses();
+  // Статусы платежей (страница «деньги») — свой набор: ждёт начала / в работе / опоздание / готово
+  const PAYMENT_STATUSES = [
+    { id: "waiting",  name: "ждёт начала", c: "231,200,106", ord: 1,   done: false },
+    { id: "progress", name: "в работе",    c: "126,196,232", ord: 2,   done: false },
+    { id: "late",     name: "опоздание",   c: "232,155,184", ord: 3,   done: false },
+    { id: "done",     name: "готово",      c: "134,217,152", ord: 999, done: true  },
+  ];
+  function seedStatuses(kind) { return (kind === "payment" ? PAYMENT_STATUSES : BUILTIN_STATUSES).map((s) => ({ ...s, builtin: true })); }
+  const localStatusKey = (kind) => (kind === "project" ? "projectStatuses" : kind === "payment" ? "paymentStatuses" : "taskStatuses");
+  let taskStatusesCache = seedStatuses(), projStatusesCache = seedStatuses(), payStatusesCache = seedStatuses("payment");
   const byOrd = (a, b) => (a.ord || 0) - (b.ord || 0);
-  function statusSet(kind) { return kind === "project" ? projStatusesCache : taskStatusesCache; }
+  function statusSet(kind) { return kind === "project" ? projStatusesCache : kind === "payment" ? payStatusesCache : taskStatusesCache; }
   function statusById(kind, id) { return statusSet(kind).find((s) => s.id === id) || null; }
   function statusColor(kind, id) { const s = statusById(kind, id); return s ? s.c : "150,153,163"; }
   function statusName(kind, id) { const s = statusById(kind, id); return s ? s.name : "без статуса"; }
@@ -69,7 +77,7 @@
   let _statusLoading = null;
   function loadStatuses() {
     if (_statusLoading) return _statusLoading;
-    _statusLoading = Promise.all([Store.statuses("task"), Store.statuses("project")]).then(([t, p]) => { taskStatusesCache = t.slice().sort(byOrd); projStatusesCache = p.slice().sort(byOrd); _statusLoading = null; }, (e) => { _statusLoading = null; throw e; });
+    _statusLoading = Promise.all([Store.statuses("task"), Store.statuses("project"), Store.statuses("payment")]).then(([t, p, m]) => { taskStatusesCache = t.slice().sort(byOrd); projStatusesCache = p.slice().sort(byOrd); payStatusesCache = m.slice().sort(byOrd); _statusLoading = null; }, (e) => { _statusLoading = null; throw e; });
     return _statusLoading;
   }
 
@@ -291,6 +299,7 @@
     else if (v === "finance") renderFinance();
     else if (v === "fincat") renderFinCatPage();
     else if (v === "shop") renderShop();
+    else if (Money && (v === "money" || v === "payees")) Money.onShow(v);
   }
   async function undoLast() {
     if (undoing) return;
@@ -349,6 +358,7 @@
       if (!d.statusesV1) { d.taskStatuses = seedStatuses(); d.projectStatuses = seedStatuses(); d.statusesV1 = true; }
       d.taskStatuses = d.taskStatuses || seedStatuses();
       d.projectStatuses = d.projectStatuses || seedStatuses();
+      d.paymentStatuses = d.paymentStatuses || seedStatuses("payment");
       d.settings = d.settings || { theme: "dark", count: 5 };
       if (!d.shopV1) { d.shopList = DEFAULT_SHOP_HTML; d.shopV1 = true; }
       d.shopList = d.shopList || "";
@@ -384,32 +394,33 @@
     async statuses(kind) {
       if (sb && this.userId) {
         const { data } = await sb.from("statuses").select("*").eq("user_id", this.userId).eq("kind", kind).order("ord");
-        if (!data || !data.length) { const rows = seedStatuses().map((s) => ({ ...s, user_id: this.userId, kind })); try { await sb.from("statuses").upsert(rows, { onConflict: "user_id,kind,id" }); } catch {} return seedStatuses(); }
+        if (!data || !data.length) { const rows = seedStatuses(kind).map((s) => ({ ...s, user_id: this.userId, kind })); try { await sb.from("statuses").upsert(rows, { onConflict: "user_id,kind,id" }); } catch {} return seedStatuses(kind); }
         return data.map((s) => ({ id: s.id, name: s.name, c: s.c, ord: s.ord, done: !!s.done, builtin: !!s.builtin }));
       }
-      const d = Local.ensure(); return (kind === "project" ? d.projectStatuses : d.taskStatuses).slice();
+      const d = Local.ensure(); return d[localStatusKey(kind)].slice();
     },
     async addStatus(kind, { name, c }) {
-      const set = kind === "project" ? projStatusesCache : taskStatusesCache;
+      const set = statusSet(kind);
       const nonDoneMax = set.filter((s) => !s.done).reduce((m, s) => Math.max(m, s.ord || 0), -1);
       const row = { id: uid(), name: name || "Без названия", c: c || STATUS_PALETTE[0], ord: nonDoneMax + 1, done: false, builtin: false };
       if (sb && this.userId) { const { data } = await sb.from("statuses").insert({ ...row, user_id: this.userId, kind }).select().single(); return data ? { id: data.id, name: data.name, c: data.c, ord: data.ord, done: !!data.done, builtin: false } : row; }
-      const d = Local.ensure(); (kind === "project" ? d.projectStatuses : d.taskStatuses).push(row); Local.write(d); return row;
+      const d = Local.ensure(); d[localStatusKey(kind)].push(row); Local.write(d); return row;
     },
     async updateStatus(kind, id, fields) {
       if (sb && this.userId) { await sb.from("statuses").update(fields).eq("user_id", this.userId).eq("kind", kind).eq("id", id); return; }
-      const d = Local.ensure(); const arr = kind === "project" ? d.projectStatuses : d.taskStatuses; const s = arr.find((x) => x.id === id); if (s) Object.assign(s, fields); Local.write(d);
+      const d = Local.ensure(); const arr = d[localStatusKey(kind)]; const s = arr.find((x) => x.id === id); if (s) Object.assign(s, fields); Local.write(d);
     },
     async deleteStatus(kind, id) {
       if (sb && this.userId) {
         if (kind === "project") await sb.from("projects").update({ status: "none" }).eq("user_id", this.userId).eq("status", id);
+        else if (kind === "payment") await sb.from("payments").update({ status: "waiting" }).eq("user_id", this.userId).eq("status", id);
         else await sb.from("tasks").update({ status: "none" }).eq("user_id", this.userId).eq("status", id);
         await sb.from("statuses").delete().eq("user_id", this.userId).eq("kind", kind).eq("id", id); return;
       }
       const d = Local.ensure();
       if (kind === "project") d.projects.forEach((p) => { if (p.status === id) p.status = "none"; });
-      else d.tasks.forEach((t) => { if (t.status === id) t.status = "none"; });
-      const key = kind === "project" ? "projectStatuses" : "taskStatuses";
+      else if (kind === "task") d.tasks.forEach((t) => { if (t.status === id) t.status = "none"; });
+      const key = localStatusKey(kind);
       d[key] = d[key].filter((x) => x.id !== id); Local.write(d);
     },
     async notes() {
@@ -592,7 +603,7 @@
     if (!(await askConfirm("Удалить статус?", "Элементы с ним станут «без статуса»"))) return;
     await Store.deleteStatus(kind, id); await loadStatuses();
     if (after) after();
-    if (currentView === "projects") renderKanban(); else if (currentView === "project") renderProjectTasks();
+    if (currentView === "projects") renderKanban(); else if (currentView === "project") renderProjectTasks(); else if (currentView === "money") rerenderCurrent();
   }
   let statusPickKind = "task", statusPickCurrent = null, statusOnPick = null;
   function renderStatusPickList() {
@@ -635,32 +646,40 @@
   $("#statusform-modal").addEventListener("click", (e) => { if (e.target.id === "statusform-modal") $("#statusform-modal").hidden = true; });
 
   /* ---------- Проекты: выбор (одиночный) и фильтр (множественный) ---------- */
-  let projMode = "single", projCurrent = null, projOnPick = null;
+  let projMode = "single", projCurrent = null, projOnPick = null, projMulti = new Set(), projMultiOnChange = null;
+  // Множественный выбор (расход на несколько проектов, фильтр денег): onChange([ids]) на каждое изменение
+  async function openProjectMulti(ids, onChange, title) {
+    await loadProjects(); projMode = "multi"; projMulti = new Set(ids || []); projMultiOnChange = onChange;
+    $("#project-modal-title").textContent = title || "проекты"; $("#project-clear").textContent = "готово"; $("#project-clear").hidden = false;
+    $("#project-search").value = ""; $("#project-modal .search-wrap").classList.remove("has-text");
+    renderProjectList(); $("#project-modal").hidden = false;
+  }
   async function openProjectPicker(currentId, onPick) {
     await loadProjects(); projMode = "single"; projCurrent = currentId; projOnPick = onPick;
-    $("#project-modal-title").textContent = "проект"; $("#project-clear").hidden = !currentId;
+    $("#project-modal-title").textContent = "проект"; $("#project-clear").textContent = "убрать проект"; $("#project-clear").hidden = !currentId;
     $("#project-search").value = ""; $("#project-modal .search-wrap").classList.remove("has-text");
     renderProjectList(); $("#project-modal").hidden = false;
   }
   async function openProjectFilter() {
     await loadProjects(); projMode = "filter";
-    $("#project-modal-title").textContent = "проекты"; $("#project-clear").hidden = true;
+    $("#project-modal-title").textContent = "проекты"; $("#project-clear").textContent = "убрать проект"; $("#project-clear").hidden = true;
     $("#project-search").value = ""; $("#project-modal .search-wrap").classList.remove("has-text");
     renderProjectList(); $("#project-modal").hidden = false;
   }
-  $("#project-clear").addEventListener("click", () => { $("#project-modal").hidden = true; if (projOnPick) projOnPick(null); });
+  $("#project-clear").addEventListener("click", () => { $("#project-modal").hidden = true; if (projMode === "multi") return; if (projOnPick) projOnPick(null); });
   function renderProjectList() {
     const q = ($("#project-search").value || "").trim().toLowerCase();
     const ordered = orderedProjects();
     const list = q ? ordered.filter((p) => (p.name || "").toLowerCase().includes(q)) : ordered;
     let html = `<button type="button" class="proj-add-row" id="proj-add-row" aria-label="Новый проект"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 6.5v11M6.5 12h11"/></svg></button>`;
-    html += list.map((p) => { const sel = projMode === "filter" ? filterProjects.has(p.id) : p.id === projCurrent; return `<button type="button" class="proj-pill ${sel ? (projMode === "filter" ? "is-on" : "is-cur") : ""}" data-id="${p.id}"><span class="proj-emoji">${projEmoji(p)}</span><span class="proj-name">${esc(p.name)}</span></button>`; }).join("");
+    html += list.map((p) => { const sel = projMode === "filter" ? filterProjects.has(p.id) : projMode === "multi" ? projMulti.has(p.id) : p.id === projCurrent; return `<button type="button" class="proj-pill ${sel ? (projMode === "single" ? "is-cur" : "is-on") : ""}" data-id="${p.id}"><span class="proj-emoji">${projEmoji(p)}</span><span class="proj-name">${esc(p.name)}</span></button>`; }).join("");
     if (!list.length && q) html += `<span class="empty">ничего не найдено</span>`;
     $("#project-list").innerHTML = html;
     $("#proj-add-row").addEventListener("click", openProjForm);
     $$("#project-list .proj-pill[data-id]").forEach((b) => b.addEventListener("click", () => {
       const id = b.dataset.id;
       if (projMode === "filter") { filterProjects.has(id) ? filterProjects.delete(id) : filterProjects.add(id); applyFiltersUI(); saveFilters(); renderProjectList(); renderTasks(); }
+      else if (projMode === "multi") { projMulti.has(id) ? projMulti.delete(id) : projMulti.add(id); renderProjectList(); if (projMultiOnChange) projMultiOnChange([...projMulti]); }
       else { $("#project-modal").hidden = true; if (projOnPick) projOnPick(id); }
     }));
   }
@@ -690,6 +709,7 @@
     const row = await Store.addProject({ emoji, name }); await loadProjects();
     $("#projform-modal").hidden = true;
     if (projMode === "single" && row) { $("#project-modal").hidden = true; if (projOnPick) projOnPick(row.id); }
+    else if (projMode === "multi" && row) { projMulti.add(row.id); renderProjectList(); if (projMultiOnChange) projMultiOnChange([...projMulti]); }
     else renderProjectList();
   });
   $("#projform-cancel").addEventListener("click", () => ($("#projform-modal").hidden = true));
@@ -837,29 +857,33 @@
   /* ---------- Навигация ---------- */
   let currentView = "tasks";
   let filtersOpen = false;   // фильтры на странице задач скрыты по умолчанию (не сохраняется между запусками)
-  const PAGE_TITLES = { tasks: "задачи", projects: "проекты", notes: "заметки", finance: "финансы", habits: "привычки", food: "калории", ai: "добавить" };
+  const PAGE_TITLES = { tasks: "задачи", projects: "проекты", notes: "заметки", finance: "финансы", habits: "привычки", food: "калории", ai: "добавить", money: "деньги" };
   function showView(name) {
     if (currentView === "ai" && name !== "ai") aiStopVoice();   // уходим с экрана ИИ — остановить запись
     // скрытые разделы недоступны из UI в этом деплое — защита от прямого перехода
     if ((name === "finance" || name === "fincat") && !FEATURES.finance) name = "tasks";
     if ((name === "food" || name === "foodmeal") && !FEATURES.food) name = "tasks";
     if (name === "habits" && !FEATURES.habits) name = "tasks";
+    if ((name === "money" || name === "payment" || name === "payees" || name === "payee" || name === "import") && !(FEATURES.money && Money)) name = "tasks";
+    if (currentView === "money" && name !== "money" && location.hash.startsWith("#money")) { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {} }
     currentView = name;
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + name));
-    const isForm = name === "task" || name === "project" || name === "note";
-    const isSub = name === "fincat" || name === "shop" || name === "foodmeal";   // под-страница: назад + свой заголовок, без нижнего меню
+    const isForm = name === "task" || name === "project" || name === "note" || name === "payment" || name === "payee";
+    const isSub = name === "fincat" || name === "shop" || name === "foodmeal" || name === "payees" || name === "import";   // под-страница: назад + свой заголовок, без нижнего меню
     $("#back-btn").hidden = !(isForm || isSub);
     $("#page-title").hidden = isForm;
     if (name === "fincat") $("#page-title").textContent = finCatViewTitle;
     else if (name === "shop") $("#page-title").textContent = "🛒 список покупок";
     else if (name === "foodmeal") { const m = mealById(foodMealId); $("#page-title").textContent = m ? (m.icon + " " + m.name) : "приём"; }
+    else if (name === "payees" || name === "import") $("#page-title").textContent = Money.titleFor(name);
     else if (!isForm) $("#page-title").textContent = PAGE_TITLES[name] || "";
     $("#page-title").classList.toggle("wrap", name === "shop");
     $("#filter-toggle").hidden = name !== "tasks";
     $("#task-views").hidden = name !== "tasks";
     if (name === "tasks") $("#task-filters").hidden = !filtersOpen;
     $("#page-nav").hidden = isForm || isSub;
-    $("#fab").hidden = !(name === "tasks" || name === "projects" || name === "notes" || name === "habits" || name === "finance" || name === "fincat" || name === "food" || name === "foodmeal");
+    $("#fab").hidden = !(name === "tasks" || name === "projects" || name === "notes" || name === "habits" || name === "finance" || name === "fincat" || name === "food" || name === "foodmeal" || name === "money" || name === "payees");
+    if (Money) Money.onShow(name);
     if (!isForm && !isSub) { let activeItem = null; $$("#page-nav .nav-item").forEach((b) => { const on = b.dataset.view === name; b.classList.toggle("active", on); if (on) activeItem = b; }); if (activeItem) requestAnimationFrame(() => activeItem.scrollIntoView({ inline: "nearest", block: "nearest" })); }
     if (name === "tasks") renderTasks();
     else if (name === "projects") renderKanban();
@@ -883,10 +907,11 @@
     if (currentView === "fincat") { showView("finance"); return; }
     if (currentView === "shop") { saveShop(); showView("notes"); return; }
     if (currentView === "foodmeal") { showView("food"); return; }
+    if (Money && Money.goBack(currentView)) return;
   }
   $("#back-btn").addEventListener("click", goBack);
   $("#brand-home").addEventListener("click", () => showView("tasks"));
-  $("#fab").addEventListener("click", () => { if (currentView === "projects") newProject(); else if (currentView === "notes") newNote(); else if (currentView === "habits") newHabit(); else if (currentView === "finance") openFinTx(); else if (currentView === "fincat") { finCatViewId === "__income__" ? openFinTx({ incomeOnly: true }) : openFinTx({ preCat: finCatViewId }); } else if (currentView === "food") openFoodAdd("breakfast"); else if (currentView === "foodmeal") openFoodAdd(foodMealId); else newTask(); });
+  $("#fab").addEventListener("click", () => { if (Money && (currentView === "money" || currentView === "payees")) { Money.fab(currentView); return; } if (currentView === "projects") newProject(); else if (currentView === "notes") newNote(); else if (currentView === "habits") newHabit(); else if (currentView === "finance") openFinTx(); else if (currentView === "fincat") { finCatViewId === "__income__" ? openFinTx({ incomeOnly: true }) : openFinTx({ preCat: finCatViewId }); } else if (currentView === "food") openFoodAdd("breakfast"); else if (currentView === "foodmeal") openFoodAdd(foodMealId); else newTask(); });
   (function () { const main = $(".main"); let sx = 0, sy = 0, on = false;
     main.addEventListener("touchstart", (e) => { if (e.touches.length !== 1 || e.target.closest(".swipe-row") || e.target.closest("[contenteditable]")) { on = false; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; on = true; }, { passive: true });
     main.addEventListener("touchmove", (e) => { if (!on) return; if (Math.abs(e.touches[0].clientY - sy) > Math.abs(e.touches[0].clientX - sx)) on = false; }, { passive: true });
@@ -1199,6 +1224,7 @@
     $("#p-tasks-empty").hidden = tasks.length > 0;
     $("#p-task-list").innerHTML = buildFlatTaskListHTML(tasks, { showDate: true });
     $$("#p-task-list .task").forEach((el) => attachSwipe(el, async () => { const o = projTasksById[el.dataset.id]; await Store.deleteTask(el.dataset.id); if (o) pushUndo("удаление задачи", () => Store.restoreTask(o)); renderProjectTasks(); }));
+    if (Money) Money.renderProjectBlock();
   }
   function isDefaultStatusSet(set) { const def = defaultFilterIds("task"); return set.size === def.length && def.every((k) => set.has(k)); }
   function applyProjFiltersUI() {
@@ -1418,7 +1444,7 @@
     showView("projects");
   }
   $("#p-submit").addEventListener("click", leaveProject);
-  $("#p-delete").addEventListener("click", async () => { if (editingProjectId && await askConfirm("Удалить проект?")) { const o = (await Store.projects()).find((x) => x.id === editingProjectId); await Store.deleteProject(editingProjectId); if (o) pushUndo("удаление проекта", () => Store.restoreProject(o)); editingProjectId = null; await loadProjects(); showView("projects"); } });
+  $("#p-delete").addEventListener("click", async () => { const mi = Money && editingProjectId ? await Money.projectPaymentsCount(editingProjectId) : null; if (editingProjectId && await askConfirm("Удалить проект?", mi && mi.count ? `у проекта ${mi.count} ${mi.count % 10 === 1 && mi.count % 100 !== 11 ? "платёж" : "платежей"} — они останутся «без проекта»` : "")) { const o = (await Store.projects()).find((x) => x.id === editingProjectId); await Store.deleteProject(editingProjectId); if (o) pushUndo("удаление проекта", () => Store.restoreProject(o)); editingProjectId = null; await loadProjects(); showView("projects"); } });
 
   /* ---------- ЗАМЕТКИ ---------- */
   function notePreview(body) { const t = document.createElement("div"); t.innerHTML = body || ""; return t.textContent.replace(/\s+/g, " ").trim(); }
@@ -1933,6 +1959,7 @@
         finCategories: (finCatsCache && finCatsCache.length ? finCatsCache : await Store.finCategories()).map((c) => ({ id: c.id, name: c.name })),
         tasks: aiCompactTasks(aiTasksFull),
         notes: aiCompactNotes(aiNotesFull),
+        ...(Money ? await Money.aiContext() : {}),
       }),
     });
     let data = null; try { data = await res.json(); } catch (e) {}
@@ -1956,6 +1983,7 @@
     if (it.kind === "task") return aiTasksFull.find((t) => t.id === it.target_id) || null;
     if (it.kind === "project") return projById(it.target_id);
     if (it.kind === "note") return aiNotesFull.find((n) => n.id === it.target_id) || null;
+    if ((it.kind === "expense" || it.kind === "income") && Money) { const t = Money.aiTargetTitle(it.target_id); return t ? { id: it.target_id, title: t } : null; }
     return null;
   }
   function aiPreviewCard(it) {
@@ -1992,11 +2020,11 @@
       if (title) html += `<div class="ai-prev-title">${esc(title)}</div>`;
       html += `<div class="ai-prev-desc">${esc(it.body || it.description || "")}</div>`;
     } else if (it.kind === "expense" || it.kind === "income") {
-      html += `<div class="ai-prev-amount">${it.kind === "income" ? "+" : "−"}${fmtMoney(Math.round((it.amount || 0) * 100))} ₽</div>`;
-      const cat = it.category_id ? (finCatsCache || []).find((c) => c.id === it.category_id) : null;
-      const bits = []; if (it.note) bits.push(esc(it.note)); if (cat) bits.push(esc(cat.name));
+      if (it.title || (tgt && tgt.title)) html += `<div class="ai-prev-title">${esc(it.title || tgt.title)}</div>`;
+      if (it.amount) html += `<div class="ai-prev-amount">${it.kind === "income" ? "+" : "−"}${window.MoneyCore ? MoneyCore.formatMoney(Math.round((it.amount || 0) * 100)) : fmtMoney(Math.round((it.amount || 0) * 100)) + " ₽"}</div>`;
+      const bits = Money ? Money.aiPreviewBits(it).map(esc) : []; if (it.note && it.note !== it.title) bits.push(esc(it.note));
       if (bits.length) html += `<div class="ai-prev-row">${bits.map((b) => `<span class="ai-prev-pill">${b}</span>`).join("")}</div>`;
-      if (!FEATURES.finance) html += hiddenHint;
+      if (it.action === "update" && !tgt) html += `<div class="ai-prev-hint">не нашёл платёж — будет создан новый</div>`;
     } else if (it.kind === "food") {
       html += `<div class="ai-prev-title">${esc(it.name || it.title || "")}</div>`;
       html += `<div class="ai-prev-row"><span class="ai-prev-pill">${Math.round(it.grams || 100)} г</span></div>`;
@@ -2026,6 +2054,7 @@
   // Применить ОДНУ запись (create/update/delete). Возвращает раздел для перехода или null.
   async function aiApplyItem(it) {
     const action = it.action || "create";
+    if ((it.kind === "expense" || it.kind === "income") && Money) return Money.applyAI(it);
     if (action === "delete") {
       const tgt = aiTarget(it); if (!tgt) return null;
       if (it.kind === "project") { await Store.deleteProject(tgt.id); await loadProjects(); return "projects"; }
@@ -2339,6 +2368,14 @@
     if (m.includes("failed to fetch") || m.includes("network")) return "Нет связи с сервером";
     return "Не получилось. Проверьте данные и попробуйте снова";
   }
+  /* ---------- Деньги (money.js): модуль получает общие механизмы приложения ---------- */
+  const Money = (FEATURES.money && window.GuncoMoney) ? window.GuncoMoney.init({
+    sb, Store, CFG, isNative, toast, pushUndo, askConfirm, attachSwipe, isJustSwiped: () => justSwiped,
+    openCalendar, openStatusPicker, openProjectPicker, openProjectMulti, openEmojiModal, loadProjects,
+    getProjects: () => projectsCache, projById, projEmoji, statusSet, statusById, statusColor, statusName, statusDot, statusPill,
+    STATUS_PALETTE, BELL_ON, BELL_OFF, TRASH_SVG, showView, openProjectEdit, getEditingProjectId: () => editingProjectId,
+    getCurrentView: () => currentView,
+  }) : null;
   let hasStarted = false;
   async function startApp() {
     if (hasStarted) return; hasStarted = true;
@@ -2347,7 +2384,8 @@
     document.documentElement.setAttribute("data-theme", s.theme || "dark");
     await loadStatuses();
     await loadProjects();
-    loadFilters(); applyFiltersUI(); renderCardMeta(); showView("tasks");
+    loadFilters(); applyFiltersUI(); renderCardMeta();
+    if (!(Money && location.hash.startsWith("#money") && Money.openHash(location.hash))) showView("tasks");
     // нативно: восстановить статус уведомлений и пересобрать локальные напоминания
     if (isNative) { applyNativeStatusBar(); refreshNotifPerm(); syncNativeReminders(); }
     // если приложение открыто из пуш-уведомления (?task=<id>) — раскрыть карточку

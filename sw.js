@@ -1,14 +1,17 @@
 /* gun.co service worker — офлайн-кэш оболочки */
-const CACHE = "gunco-v123";
+const CACHE = "gunco-v124";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=123",
-  "./app.js?v=123",
+  "./styles.css?v=124",
+  "./app.js?v=124",
   "./config.js",
+  "./money-core.js?v=124",
+  "./money-xlsx.js?v=124",
+  "./money.js?v=124",
   "./manifest.webmanifest",
-  "./data/foods.json?v=123",
-  "./data/activities.json?v=123",
+  "./data/foods.json?v=124",
+  "./data/activities.json?v=124",
   "./icons/rose.svg",
   "./icons/gun.svg",
   "./icons/favicon.svg",
