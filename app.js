@@ -11,7 +11,7 @@
   const CFG = window.GUNCO_CONFIG || {};
 
   /* ---------- Разделы этого деплоя ---------- */
-  const FEATURES = { finance: false, food: false, habits: false, money: true };   // finance — старый раздел, заменён «деньгами» (money.js)
+  const FEATURES = { finance: false, food: false, habits: false, money: false };   // money — раздел «деньги» убран из Gunco (финучёт живёт в Sheetaet); код модуля в _dev/archive-money
 
   /* ---------- Платформа: нативное приложение vs браузер ---------- */
   const isNative = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform());
